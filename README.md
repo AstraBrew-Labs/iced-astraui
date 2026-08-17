@@ -1,146 +1,174 @@
-<img src="https://raw.githubusercontent.com/al01cn/sillyTavern-launcher/GUI/src/assets/images/banner.png" style="width: 100%; height: 100%;" />
+<div align="center">
+  <img src="assets/icon/icon.png" alt="Astra UI" width="96" height="96">
 
-# 星酿启动器 (AstraBrew Launcher) · MacOS版本
+# Astra UI
 
+**参考 HeroUI v3 设计语言，为 iced 打造的 Rust 桌面 UI 组件库。**
 
-<div style="text-align: center;" align="center">
+用一致的视觉规范、语义化 API 和可复用交互组件，帮助你更快完成现代桌面应用界面。
 
-星酿启动器 (AstraBrew Launcher) 原为 [酒馆启动器GUI (SillyTavern Launcher GUI)](https://github.com/al01cn/sillyTavern-launcher)，是一款专为小白打造的简单易用的[酒馆(SillyTavern)](https://github.com/sillyTavern/SillyTavern)启动器。基于 Rust 和 iced 开发，旨在为用户提供易用、快速、轻量、多功能的启动和管理体验。
-
-当前仓库单独管理 MacOS版本 的启动器。MacOS 用户可以通过星酿启动器轻松配置和管理酒馆实例，享受一键启动、版本管理、环境配置等功能。我们专注于提供流畅的用户界面和稳定的性能，让每位用户都能轻松上手并愉快使用。
-
-[![Releases](https://img.shields.io/github/v/release/AstraBrew-Labs/AstraBrew-Launcher-Mac?label=版本)](https://github.com/AstraBrew-Labs/AstraBrew-Launcher-Mac/releases)
-[![Rust](https://img.shields.io/badge/Rust-latest-CE422B?style=flat-square&logo=rust)](https://www.rust-lang.org/)
-[![iced](https://img.shields.io/github/v/release/iced-rs/iced?label=iced)](https://github.com/iced-rs/iced)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-
-[官网](https://launcher.astrabrew.cn) | [Windows版](https://github.com/AstraBrew-Labs/AstraBrew-Launcher-Win/)
+[![Rust](https://img.shields.io/badge/Rust-2024-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![iced](https://img.shields.io/badge/iced-0.14-08A5E5)](https://iced.rs/)
+[![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
+[![Status](https://img.shields.io/badge/status-early%20development-F59E0B)](#项目状态)
 
 </div>
 
-## 📖 项目介绍
+## 关于 Astra UI
 
-星酿启动器提供了一站式的环境配置、一键启动、版本管理以及扩展和资源管理功能。其特点包括：
-- **实时响应的界面**：基于 iced 构建的即时模式 GUI，流畅且资源占用低。
-- **国际化支持**：目前支持中文 (zh_CN) 和英文 (en_US)。
-- **主题切换**：支持深色和浅色模式的动态切换。
-- **多屏自适应**：自动处理 16:9 和 4:3 屏幕比例，适配高分辨率显示器及多屏幕切换。
-- **环境隔离**：支持内置和系统级别的 Git、Node.js 环境切换，内置包管理和加速代理配置。
+Astra UI 是一个面向 [iced](https://iced.rs/) 应用的本地 UI 设计系统。它借鉴 [HeroUI v3](https://www.heroui.com/) 清晰、克制的视觉语言，并结合原生桌面应用的交互方式重新实现，而不是对 Web 组件的逐项移植。
 
-## 🛠 技术栈
+项目提供统一的颜色、圆角、间距、字号和动效规范，以及可以直接组合进 iced `view` 的组件与样式。目标是减少重复的样式代码，让应用开发更专注于业务状态和交互逻辑。
 
-- **Rust (2024 Edition)**: 核心开发语言，提供内存安全和极致性能。
-- **iced (0.14.0)**: 简单易用、响应快速的即时模式 (Immediate mode) GUI 框架。
-- **lucide-icons (1.31.0)** : 官方图标库，提供图标的矢量 SVG 格式。
+> Astra UI 是独立开发的项目，与 HeroUI 官方没有隶属或合作关系。
 
-## 运行项目
+## 特性
 
-## 运行
+- **HeroUI 风格**：简洁的表面层级、柔和圆角、语义色彩和一致的控件尺寸。
+- **原生 iced 组件**：基于 Rust 与 iced 构建，不依赖 WebView 或前端运行时。
+- **语义化变体**：通过 `Primary`、`Secondary`、`Ghost`、`Danger` 等变体快速表达组件用途。
+- **可组合 API**：卡片、提示、菜单、弹窗等组件可以和 iced 原生 widget 一起组合。
+- **完整交互状态**：覆盖 hover、pressed、focused、selected、disabled 等常见状态。
+- **短时动效**：内置按钮、开关、复选框和进度组件的轻量过渡动画。
+- **统一设计令牌**：集中管理颜色、圆角、控件高度和排版规范。
+- **本地字体与图标**：内置 HarmonyOS Sans 字重，并使用 Lucide 图标。
 
-### 普通用户
+## 组件
 
-普通用户请可以直接到[发布页(Releases)](/releases)下载最新版本的DMG安装包，在安装界面把 AstraBrew Launcher.app 拖到 Applications 文件夹中，即可在App里找到星酿启动器 (AstraBrew Launcher) 点击启动。
+当前 Showcase 已覆盖以下组件和模式：
 
-### 开发者
+| 分类 | 组件 |
+| --- | --- |
+| 基础 | Button、Typography、Separator、Card、Avatar、Badge、Chip |
+| 输入 | Text Input、Select、Checkbox、Radio、Switch、Slider |
+| 导航 | Tabs、Pagination、Disclosure、Accordion |
+| 操作 | Dropdown、Context Menu、Toolbar、Toggle Button、Tag Group、Tooltip |
+| 反馈 | Alert、Global Message、Toast、Progress Bar、Progress Circle |
+| 浮层 | Modal、Alert Dialog、Global Layer、Scroll Shadow |
 
-##  开发环境
+组件、设计令牌和常见组合模式都可以在仓库内置的 Showcase 中查看。
 
-本项目使用 Rust 语言进行开发，因此需要安装 Rust 和 Cargo。建议使用最新的 stable 版本，以确保兼容性和性能。
+## 快速开始
 
-### 前置要求
+### 环境要求
 
-在开始之前，请确保您的系统已经安装了以下工具：
-- [Rust & Cargo](https://www.rust-lang.org/tools/install) (建议使用最新的 stable 版本)
-- 因为当前仓库是MacOS的版本，所有开发都按照 MacOS 的规范进行开发。仅支持 MacOS 平台。
-- 请勿将其他平台的依赖或配置引入本项目，以避免不必要的兼容性问题。
+- Rust stable
+- Cargo
+- macOS（当前主要开发与验证平台）
 
-### 运行项目
+### 运行 Showcase
 
-1. 克隆或下载本项目到本地。
-2. 进入项目根目录：
-   ```bash
-   cd astrabrew-launcher-mac
-   ```
-3. 使用 Cargo 检查或编译项目：
-   ```bash
-   cargo check
-   ```
-4. 运行项目（调试模式）：
-   ```bash
-   cargo run
-   ```
-   > **注意**：开发过程中如果只需检查代码规范和编译错误，请优先使用 `cargo check` 以提高效率。
-
-## 📂 项目结构
-
-```text
-astrabrew-launcher-mac/
-├── assets/                  # 静态资源文件
-│   └── fonts/               # 字体文件（如 MiSans-Regular.ttf）
-├── src/                     # 源代码目录
-│   ├── core/                # 核心逻辑模块（环境配置等）
-│   ├── lang/                # 国际化语言模块（en.rs, zh.rs, lang.rs）
-│   ├── utils.rs             # 通用工具函数
-│   └── main.rs              # 应用程序主入口
-├── Cargo.toml               # Rust 项目配置和依赖声明
-└── README.md                # 项目说明文档
+```bash
+git clone https://github.com/AstraBrew-Labs/iced-astraui.git
+cd iced-astraui
+cargo run --release
 ```
 
-## 📂 软件目录结构
+仅检查项目是否能够正常编译：
 
-```text
- ~/Library/Application Support/AstraBrew Launcher/    ← 根目录 (root)
- ├── data/                   ← 软件数据目录
- │   ├── default/            ← 默认数据目录
- │   │   └── sillytavern/        ← 默认酒馆数据目录
- │   │       └── config.yaml     ← 默认酒馆配置文件
- │   │       └── settings.json   ← 默认酒馆WebUI配置文件
- │   ├── sillytavern/        ← 全局酒馆数据目录
- │   │   └── data/           ← 全局酒馆数据目录
- │   │       ├── config.yaml ← 全局酒馆配置文件
- │   │       └── default-user/
- │   │           └── settings.json ← 全局酒馆WebUI设置
- │   └── local_instances.json ← 本地实例列表
- ├── sillytavern/            ← 酒馆核心文件目录 (ST installation) (对应软件里的`在线下载`实例)
- └── config.json             ← 启动器配置文件
-
- ~/Library/Logs/AstraBrew Launcher/      ← 日志目录 (logs)
-
- ~/Library/Caches/AstraBrew Launcher/    ← 缓存目录 (caches)
-
- /tmp/AstraBrew Launcher/                ← 临时目录 (temp)
+```bash
+cargo check
 ```
 
-## 📝 代码规范与注释规范
+### 在项目中使用
 
-### AI编程
-- 可使用仓库里的`MEMORY.md`喂给AI，辅助开发。
+当前版本以本地组件源码和 Showcase 的形式维护，尚未发布到 crates.io。你可以将以下模块和资源集成到现有 iced 项目中：
 
-### 代码规范
-- **命名规范**：
-  - 变量和函数使用 `snake_case`。
-  - 结构体、枚举和特征使用 `PascalCase`。
-  - 常量和静态变量使用 `SCREAMING_SNAKE_CASE`。
-- **模块化**：页面和功能模块需分文件编写，禁止所有逻辑堆砌在主函数或单个文件内。
-- **错误处理**：尽量使用 `Result` 和 `Option` 进行错误处理，避免直接使用 `unwrap()` 或 `panic!()` 导致程序崩溃。
+```text
+src/ui.rs
+src/fonts.rs
+src/icons.rs
+assets/fonts/
+```
 
-### 代码注释规范
-- **强制使用中文**进行代码注释。
-- **函数和结构体说明**：在复杂的函数和结构体定义前使用 `///` 进行文档注释，解释其用途和参数含义。
-- **逻辑块注释**：在复杂的业务逻辑块上方使用 `//` 进行单行注释，说明该段代码的意图。
-- 避免冗余和废话注释（如 `// 定义变量` 等无意义的说明）。
+并添加对应依赖：
 
-## 🤝 贡献指南
+```toml
+[dependencies]
+iced = { version = "0.14.0", features = ["advanced", "canvas", "image", "tokio"] }
+lucide-icons = { version = "1.31.0", features = ["iced"] }
+```
 
-我们欢迎并感谢任何形式的贡献！
-1. Fork 本仓库。
-2. 创建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
-3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
-4. 推送到分支 (`git push origin feature/AmazingFeature`)。
-5. 开启一个 Pull Request。
+一个简单的组件组合示例：
 
-在提交代码前，请务必运行 `cargo check` 和 `cargo fmt` 以确保代码符合规范且无编译错误。
+```rust
+use iced::widget::{button, column, text};
+use iced::{Element, Fill};
 
-## 📄 代码许可
+use crate::ui::{self, Alert, AlertKind, ButtonVariant, Card};
 
-本项目采用 [MIT License](LICENSE) 协议进行开源，允许自由使用、修改和分发，但请保留原作者的版权声明。字体等第三方资源版权归其原作者所有。
+#[derive(Debug, Clone)]
+enum Message {
+    Save,
+    Dismiss,
+}
+
+fn view() -> Element<'static, Message> {
+    Card::new(
+        column![
+            text("工作区设置"),
+            Alert::new("配置已同步")
+                .description("所有更改均已保存到本地")
+                .kind(AlertKind::Success)
+                .on_close(Message::Dismiss),
+            button("保存")
+                .on_press(Message::Save)
+                .style(ui::button_style(ButtonVariant::Primary)),
+        ]
+        .spacing(16)
+        .width(Fill),
+    )
+    .width(Fill)
+    .into()
+}
+```
+
+应用主题可以直接使用 `ui::app_theme()`：
+
+```rust
+iced::application(App::new, App::update, App::view)
+    .theme(|_| ui::app_theme())
+    .run()
+```
+
+## 项目结构
+
+```text
+astra-ui/
+├── assets/
+│   ├── fonts/          # HarmonyOS Sans 字体资源
+│   └── icon/           # 应用图标
+├── src/
+│   ├── app.rs          # Showcase 状态、消息与页面
+│   ├── fonts.rs        # 字体注册与字重映射
+│   ├── icons.rs        # Lucide 图标适配
+│   ├── main.rs         # Showcase 入口
+│   └── ui.rs           # 组件、样式、设计令牌与交互实现
+├── Cargo.toml
+└── README.md
+```
+
+## 开发
+
+提交代码前请运行：
+
+```bash
+cargo fmt --check
+cargo check
+cargo test
+```
+
+新增组件时，请尽量保持以下原则：
+
+- 优先复用现有设计令牌与语义色，不在组件内随意增加孤立样式。
+- 同时处理默认、悬停、按下、聚焦和禁用状态。
+- API 与 iced 的消息驱动模型保持一致，并支持与原生 widget 组合。
+- 在 Showcase 中补充可交互示例，展示主要变体和边界状态。
+
+## 项目状态
+
+Astra UI 当前处于早期开发阶段，API 可能随组件完善而调整。`Cargo.toml` 暂时设置为 `publish = false`，建议在固定提交版本的前提下集成到应用中。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。第三方字体与图标资源遵循各自的许可证。
