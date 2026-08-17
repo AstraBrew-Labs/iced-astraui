@@ -852,6 +852,7 @@ fn toggle_button_style(
 ) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let pressed = matches!(status, button::Status::Pressed);
+        let standalone = matches!(position, GroupPosition::Standalone);
         let radius = match (position, orientation) {
             (GroupPosition::Standalone, _) => RADIUS_CONTROL.into(),
             (GroupPosition::First, Orientation::Horizontal) => iced::border::left(RADIUS_FIELD),
@@ -872,8 +873,9 @@ fn toggle_button_style(
             background,
             text_color: if selected { WHITE } else { INK_MUTED },
             border: Border {
+                color: if standalone { LINE } else { Color::TRANSPARENT },
+                width: if standalone { 1.0 } else { 0.0 },
                 radius,
-                ..Border::default()
             },
             shadow: if pressed && matches!(position, GroupPosition::Standalone) {
                 Shadow {
@@ -886,6 +888,17 @@ fn toggle_button_style(
             },
             ..button::Style::default()
         }
+    }
+}
+
+fn toggle_button_group_surface(_theme: &Theme) -> container::Style {
+    container::Style {
+        border: Border {
+            color: LINE,
+            width: 1.0,
+            radius: RADIUS_FIELD.into(),
+        },
+        ..container::Style::default()
     }
 }
 
@@ -1034,6 +1047,11 @@ where
     let content: Element<'a, Message> = match orientation {
         Orientation::Horizontal => row(controls).spacing(spacing).into(),
         Orientation::Vertical => column(controls).spacing(spacing).into(),
+    };
+    let content = if !detached && count > 1 {
+        container(content).style(toggle_button_group_surface).into()
+    } else {
+        content
     };
 
     navigation_group(
@@ -1619,6 +1637,11 @@ pub fn nav_button_animated(
 }
 
 pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let focused = matches!(status, text_input::Status::Focused { .. });
+    let hovered = matches!(
+        status,
+        text_input::Status::Hovered | text_input::Status::Focused { is_hovered: true }
+    );
     let disabled = matches!(status, text_input::Status::Disabled);
     text_input::Style {
         background: Background::Color(if disabled {
@@ -1627,8 +1650,17 @@ pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_inpu
             SURFACE
         }),
         border: Border {
+            color: if disabled {
+                Color::from_rgba(LINE.r, LINE.g, LINE.b, 0.55)
+            } else if focused {
+                BLUE_600
+            } else if hovered {
+                BLUE_500
+            } else {
+                LINE
+            },
+            width: if focused { 2.0 } else { 1.0 },
             radius: RADIUS_FIELD.into(),
-            ..Border::default()
         },
         icon: BLUE_600,
         placeholder: INK_SUBTLE,
@@ -1638,6 +1670,7 @@ pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_inpu
 }
 
 pub fn pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let hovered = matches!(status, pick_list::Status::Hovered);
     let opened = matches!(status, pick_list::Status::Opened { .. });
     pick_list::Style {
         text_color: INK,
@@ -1645,8 +1678,15 @@ pub fn pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::
         handle_color: if opened { BLUE_600 } else { INK_MUTED },
         background: Background::Color(SURFACE),
         border: Border {
+            color: if opened {
+                BLUE_600
+            } else if hovered {
+                BLUE_500
+            } else {
+                LINE
+            },
+            width: if opened { 2.0 } else { 1.0 },
             radius: RADIUS_FIELD.into(),
-            ..Border::default()
         },
     }
 }
@@ -1655,8 +1695,9 @@ pub fn pick_list_menu_style(_theme: &Theme) -> menu::Style {
     menu::Style {
         background: Background::Color(SURFACE),
         border: Border {
+            color: LINE,
+            width: 1.0,
             radius: RADIUS_FIELD.into(),
-            ..Border::default()
         },
         text_color: INK,
         selected_text_color: BLUE_700,
@@ -2258,10 +2299,23 @@ where
 
 fn disclosure_surface(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(SURFACE_ALT)),
+        background: Some(Background::Color(SURFACE)),
         border: Border {
+            color: LINE,
+            width: 1.0,
             radius: RADIUS_FIELD.into(),
-            ..Border::default()
+        },
+        ..container::Style::default()
+    }
+}
+
+fn disclosure_panel_surface(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(SURFACE)),
+        border: Border {
+            color: LINE,
+            width: 1.0,
+            radius: iced::border::bottom(RADIUS_FIELD),
         },
         ..container::Style::default()
     }
@@ -2283,7 +2337,11 @@ fn disclosure_trigger_style(expanded: bool) -> impl Fn(&Theme, button::Status) -
             background: Some(Background::Color(background)),
             text_color: INK,
             border: Border {
-                radius: RADIUS_FIELD.into(),
+                radius: if expanded {
+                    iced::border::top(RADIUS_FIELD)
+                } else {
+                    RADIUS_FIELD.into()
+                },
                 ..Border::default()
             },
             ..button::Style::default()
@@ -2337,8 +2395,10 @@ where
     let panel = if expanded {
         column![
             trigger,
-            rule::horizontal(1),
-            container(content.into()).width(Fill).padding([14, 16])
+            container(content.into())
+                .width(Fill)
+                .padding([14, 16])
+                .style(disclosure_panel_surface)
         ]
     } else {
         column![trigger]
@@ -3881,31 +3941,13 @@ mod tests {
     }
 
     #[test]
-    fn component_interaction_styles_are_borderless() {
+    fn non_field_interaction_styles_are_borderless() {
         let theme = super::app_theme();
 
         assert_eq!(
             super::button_style(super::ButtonVariant::Outline)(
                 &theme,
                 iced::widget::button::Status::Hovered,
-            )
-            .border
-            .width,
-            0.0
-        );
-        assert_eq!(
-            super::text_input_style(
-                &theme,
-                iced::widget::text_input::Status::Focused { is_hovered: true },
-            )
-            .border
-            .width,
-            0.0
-        );
-        assert_eq!(
-            super::pick_list_style(
-                &theme,
-                iced::widget::pick_list::Status::Opened { is_hovered: true },
             )
             .border
             .width,
@@ -3934,6 +3976,62 @@ mod tests {
             .border_width,
             0.0
         );
+    }
+
+    #[test]
+    fn form_fields_keep_visible_stateful_borders() {
+        let theme = super::app_theme();
+        let input = super::text_input_style(&theme, iced::widget::text_input::Status::Active);
+        let focused_input = super::text_input_style(
+            &theme,
+            iced::widget::text_input::Status::Focused { is_hovered: true },
+        );
+        let select = super::pick_list_style(&theme, iced::widget::pick_list::Status::Active);
+        let opened_select = super::pick_list_style(
+            &theme,
+            iced::widget::pick_list::Status::Opened { is_hovered: true },
+        );
+        let menu = super::pick_list_menu_style(&theme);
+
+        assert_eq!((input.border.color, input.border.width), (super::LINE, 1.0));
+        assert_eq!(
+            (focused_input.border.color, focused_input.border.width),
+            (super::BLUE_600, 2.0)
+        );
+        assert_eq!(
+            (select.border.color, select.border.width),
+            (super::LINE, 1.0)
+        );
+        assert_eq!(
+            (opened_select.border.color, opened_select.border.width),
+            (super::BLUE_600, 2.0)
+        );
+        assert_eq!((menu.border.color, menu.border.width), (super::LINE, 1.0));
+    }
+
+    #[test]
+    fn toggle_controls_use_one_subtle_outer_border() {
+        let theme = super::app_theme();
+        let standalone = super::toggle_button_style(
+            false,
+            super::ToggleButtonVariant::Default,
+            super::GroupPosition::Standalone,
+            super::Orientation::Horizontal,
+        )(&theme, iced::widget::button::Status::Active);
+        let joined_item = super::toggle_button_style(
+            false,
+            super::ToggleButtonVariant::Default,
+            super::GroupPosition::First,
+            super::Orientation::Horizontal,
+        )(&theme, iced::widget::button::Status::Active);
+        let group = super::toggle_button_group_surface(&theme);
+
+        assert_eq!(
+            (standalone.border.color, standalone.border.width),
+            (super::LINE, 1.0)
+        );
+        assert_eq!(joined_item.border.width, 0.0);
+        assert_eq!((group.border.color, group.border.width), (super::LINE, 1.0));
     }
 
     #[test]
@@ -3984,6 +4082,24 @@ mod tests {
             .background,
             iced::Background::Color(super::SURFACE)
         );
+    }
+
+    #[test]
+    fn disclosure_uses_one_connected_surface_without_shadows() {
+        let theme = super::app_theme();
+        let disclosure = super::disclosure_surface(&theme);
+        let panel = super::disclosure_panel_surface(&theme);
+        let expected = Some(iced::Background::Color(super::SURFACE));
+
+        assert_eq!(disclosure.background, expected);
+        assert_eq!(panel.background, expected);
+        assert_eq!(
+            (disclosure.border.color, disclosure.border.width),
+            (super::LINE, 1.0)
+        );
+        assert_eq!((panel.border.color, panel.border.width), (super::LINE, 1.0));
+        assert_eq!(disclosure.shadow, iced::Shadow::default());
+        assert_eq!(panel.shadow, iced::Shadow::default());
     }
 
     #[test]
