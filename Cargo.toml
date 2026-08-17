@@ -1,0 +1,15 @@
+[package]
+name = "astrabrew-launcher"
+version = "0.1.0"
+edition = "2024"
+description = "Native macOS launcher for AstraBrew"
+license = "MIT"
+publish = false
+
+[dependencies]
+iced = "0.14.0"
+lucide-icons = { version = "1.31.0", features = ["iced"] }
+
+[profile.release]
+lto = "thin"
+strip = true
