@@ -1,13 +1,15 @@
 use iced::time::{self, Duration, Instant};
 use iced::widget::text::LineHeight;
 use iced::widget::{
-    button, checkbox, column, container, mouse_area, pick_list, progress_bar, row, rule,
-    scrollable, space, text, text_input,
+    button, checkbox, column, container, mouse_area, pick_list, row, rule, scrollable, space, text,
+    text_input,
 };
 use iced::{Alignment, Element, Fill, Pixels, Point, Subscription, Task, Theme};
 use lucide_icons::Icon;
 
 use crate::{fonts, icons, ui};
+
+const PAGINATION_DEMO_TOTAL_PAGES: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Page {
@@ -109,6 +111,8 @@ pub(crate) enum Message {
     ShowToast(ToastDemo),
     DismissToast(u64),
     ToastAction(u64),
+    TypographyCopied,
+    PaginationChanged(usize),
     ControlFocused(KeyboardScope, usize),
     ControlActivated(KeyboardScope, usize),
     RemoveTag(usize),
@@ -147,6 +151,10 @@ pub struct Launcher {
     toasts: Vec<ToastNotice>,
     toast_placement: ui::ToastPlacement,
     next_toast_id: u64,
+    pagination_page: usize,
+    indeterminate_progress: f32,
+    indeterminate_circle_progress: f32,
+    progress_last_tick: Option<Instant>,
     keyboard_scope: Option<KeyboardScope>,
     standalone_toggle: bool,
     tag_labels: Vec<&'static str>,
@@ -171,6 +179,7 @@ impl Launcher {
             Self {
                 slider: 68.0,
                 disclosure_open: true,
+                pagination_page: 6,
                 tag_labels: vec!["Design", "Rust", "Desktop", "Accessible"],
                 tag_selected: vec![true, true, false, false],
                 alignment: 1,
@@ -191,7 +200,7 @@ impl Launcher {
 
     pub fn subscription(&self) -> Subscription<Message> {
         let now = Instant::now();
-        let timer = if self.motion.needs_ticks(now) {
+        let timer = if self.motion.needs_ticks(now) || self.page == Page::Components {
             time::every(Duration::from_millis(16)).map(Message::Tick)
         } else if self.global_message.is_some() || !self.toasts.is_empty() {
             time::every(Duration::from_millis(100)).map(Message::Tick)
@@ -224,6 +233,9 @@ impl Launcher {
         match message {
             Message::Navigate(page) => {
                 self.page = page;
+                if page != Page::Components {
+                    self.progress_last_tick = None;
+                }
                 self.motion.press(
                     match page {
                         Page::Components => "nav-components",
@@ -302,6 +314,16 @@ impl Launcher {
                     None,
                     now,
                 );
+            }
+            Message::TypographyCopied => self.push_toast(
+                "复制成功",
+                "选中的文本已复制到剪贴板。",
+                ui::ToastVariant::Success,
+                None,
+                now,
+            ),
+            Message::PaginationChanged(page) => {
+                self.pagination_page = page.clamp(1, PAGINATION_DEMO_TOTAL_PAGES);
             }
             Message::ControlFocused(scope, index) => {
                 self.keyboard_scope = Some(scope);
@@ -406,6 +428,20 @@ impl Launcher {
             Message::Noop => {}
             Message::Tick(now) => {
                 self.motion.tick(now);
+                if self.page == Page::Components {
+                    let elapsed = self
+                        .progress_last_tick
+                        .and_then(|last_tick| now.checked_duration_since(last_tick))
+                        .unwrap_or_default();
+                    self.indeterminate_progress =
+                        (self.indeterminate_progress + elapsed.as_secs_f32() / 1.5).rem_euclid(1.0);
+                    self.indeterminate_circle_progress = (self.indeterminate_circle_progress
+                        + elapsed.as_secs_f32())
+                    .rem_euclid(1.0);
+                    self.progress_last_tick = Some(now);
+                } else {
+                    self.progress_last_tick = None;
+                }
                 if self
                     .global_message
                     .as_ref()
@@ -1211,34 +1247,6 @@ impl Launcher {
                 .spacing(8)
                 .wrap(),
                 row![
-                    column![
-                        text("Install progress")
-                            .size(11)
-                            .font(fonts::MEDIUM)
-                            .color(ui::INK_MUTED),
-                        progress_bar(0.0..=100.0, 72.0 * self.motion.progress_progress(now),)
-                            .girth(8)
-                            .style(ui::progress_style)
-                    ]
-                    .spacing(8)
-                    .width(Fill),
-                    column![
-                        text("Circular / indeterminate")
-                            .size(11)
-                            .font(fonts::MEDIUM)
-                            .color(ui::INK_MUTED),
-                        container(text("...").size(18).font(fonts::BOLD).color(ui::BLUE_600))
-                            .width(42)
-                            .height(28)
-                            .align_x(Alignment::Center)
-                            .align_y(Alignment::Center)
-                            .style(ui::tint)
-                    ]
-                    .spacing(8),
-                ]
-                .spacing(18)
-                .align_y(Alignment::End),
-                row![
                     container(
                         row![
                             icons::icon(Icon::Info, 16, ui::BLUE_600),
@@ -1287,6 +1295,11 @@ impl Launcher {
             .spacing(16),
         );
 
+        let progress_bars = self.progress_bar_showcase();
+        let progress_circles = self.progress_circle_showcase();
+        let separator_showcase = self.separator_showcase();
+        let typography_showcase = self.typography_showcase();
+        let scroll_shadow_showcase = self.scroll_shadow_showcase();
         let card_and_toast = self.card_and_toast_showcase();
         let selection_and_navigation = self.selection_and_navigation_showcase();
 
@@ -1294,6 +1307,11 @@ impl Launcher {
             header,
             buttons,
             fields,
+            progress_bars,
+            progress_circles,
+            separator_showcase,
+            typography_showcase,
+            scroll_shadow_showcase,
             data_display,
             card_and_toast,
             selection_and_navigation,
@@ -1303,6 +1321,397 @@ impl Launcher {
         .padding([34, 42])
         .width(Fill)
         .into()
+    }
+
+    fn progress_bar_showcase(&self) -> Element<'_, Message> {
+        let now = Instant::now();
+        let colors = column![
+            ui::ProgressBar::new(45.0)
+                .label("Default")
+                .show_value(false)
+                .color(ui::ProgressBarColor::Default),
+            ui::ProgressBar::new(55.0)
+                .label("Accent")
+                .show_value(false)
+                .color(ui::ProgressBarColor::Accent),
+            ui::ProgressBar::new(65.0)
+                .label("Success")
+                .show_value(false)
+                .color(ui::ProgressBarColor::Success),
+            ui::ProgressBar::new(75.0)
+                .label("Warning")
+                .show_value(false)
+                .color(ui::ProgressBarColor::Warning),
+            ui::ProgressBar::new(85.0)
+                .label("Danger")
+                .show_value(false)
+                .color(ui::ProgressBarColor::Danger),
+        ]
+        .spacing(10);
+
+        let sizes = column![
+            ui::ProgressBar::new(40.0)
+                .label("Small")
+                .show_value(false)
+                .size(ui::ProgressBarSize::Small),
+            ui::ProgressBar::new(60.0)
+                .label("Medium")
+                .show_value(false)
+                .size(ui::ProgressBarSize::Medium),
+            ui::ProgressBar::new(80.0)
+                .label("Large")
+                .show_value(false)
+                .size(ui::ProgressBarSize::Large),
+        ]
+        .spacing(10);
+
+        self.component_card(
+            "ProgressBar",
+            "Determinate and indeterminate progress with semantic colors, sizes, labels, and custom ranges.",
+            column![
+                row![
+                    ui::ProgressBar::new(72.0 * self.motion.progress_progress(now))
+                        .label("Install progress")
+                        .color(ui::ProgressBarColor::Accent)
+                        .width(Fill),
+                    ui::ProgressBar::new(0.0)
+                        .label("Syncing components")
+                        .is_indeterminate(true)
+                        .animation_phase(self.indeterminate_progress)
+                        .color(ui::ProgressBarColor::Accent)
+                        .width(Fill),
+                ]
+                .spacing(20)
+                .align_y(Alignment::End),
+                row![
+                    column![
+                        text("Colors")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        colors,
+                    ]
+                    .spacing(10)
+                    .width(Fill),
+                    column![
+                        text("Sizes")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        sizes,
+                    ]
+                    .spacing(10)
+                    .width(Fill),
+                ]
+                .spacing(20)
+                .align_y(Alignment::Start),
+                row![
+                    ui::ProgressBar::new(750.0)
+                        .range(0.0..=1000.0)
+                        .label("Custom range")
+                        .value_label("750 / 1000")
+                        .color(ui::ProgressBarColor::Success)
+                        .width(Fill),
+                    column![
+                        text("Without visible label")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        ui::ProgressBar::new(45.0)
+                            .color(ui::ProgressBarColor::Default)
+                            .size(ui::ProgressBarSize::Small)
+                            .width(Fill),
+                    ]
+                    .spacing(8)
+                    .width(Fill),
+                ]
+                .spacing(20)
+                .align_y(Alignment::End),
+            ]
+            .spacing(18),
+        )
+    }
+
+    fn progress_circle_showcase(&self) -> Element<'_, Message> {
+        let sizes: Vec<Element<'_, Message>> = [
+            ("Small", ui::ProgressCircleSize::Small, 40.0),
+            ("Medium", ui::ProgressCircleSize::Medium, 60.0),
+            ("Large", ui::ProgressCircleSize::Large, 80.0),
+        ]
+        .into_iter()
+        .map(|(label, size, value)| {
+            column![
+                ui::ProgressCircle::new(value).size(size),
+                text(label)
+                    .size(10)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            ]
+            .spacing(7)
+            .align_x(Alignment::Center)
+            .into()
+        })
+        .collect();
+        let colors: Vec<Element<'_, Message>> = [
+            ("Default", ui::ProgressCircleColor::Default),
+            ("Accent", ui::ProgressCircleColor::Accent),
+            ("Success", ui::ProgressCircleColor::Success),
+            ("Warning", ui::ProgressCircleColor::Warning),
+            ("Danger", ui::ProgressCircleColor::Danger),
+        ]
+        .into_iter()
+        .map(|(label, color)| {
+            column![
+                ui::ProgressCircle::new(60.0).color(color),
+                text(label)
+                    .size(10)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            ]
+            .spacing(7)
+            .align_x(Alignment::Center)
+            .into()
+        })
+        .collect();
+
+        self.component_card(
+            "ProgressCircle",
+            "Circular determinate and indeterminate progress with semantic colors, sizes, and labels.",
+            column![
+                row![
+                    column![
+                        text("Sizes")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        row(sizes).spacing(20).align_y(Alignment::End),
+                    ]
+                    .spacing(12)
+                    .width(Fill),
+                    column![
+                        text("Colors")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        row(colors).spacing(20).align_y(Alignment::End),
+                    ]
+                    .spacing(12)
+                    .width(Fill),
+                ]
+                .spacing(24)
+                .align_y(Alignment::Start),
+                row![
+                    ui::ProgressCircle::new(0.0)
+                        .is_indeterminate(true)
+                        .animation_phase(self.indeterminate_circle_progress)
+                        .size(ui::ProgressCircleSize::Large)
+                        .label("Loading"),
+                    ui::ProgressCircle::new(75.0)
+                        .size(ui::ProgressCircleSize::Large)
+                        .color(ui::ProgressCircleColor::Success)
+                        .label("75% Complete"),
+                    ui::ProgressCircle::new(750.0)
+                        .range(0.0..=1000.0)
+                        .size(ui::ProgressCircleSize::Large)
+                        .color(ui::ProgressCircleColor::Warning)
+                        .label("750 / 1000"),
+                ]
+                .spacing(32)
+                .align_y(Alignment::Center),
+            ]
+            .spacing(20),
+        )
+    }
+
+    fn separator_showcase(&self) -> Element<'_, Message> {
+        let horizontal_variant = |label, variant| {
+            column![
+                text(label)
+                    .size(11)
+                    .font(fonts::MEDIUM)
+                    .color(ui::INK_MUTED),
+                ui::Separator::new().variant(variant),
+            ]
+            .spacing(7)
+            .width(Fill)
+        };
+
+        self.component_card(
+            "Separator",
+            "Visual dividers for horizontal content sections and compact vertical groups.",
+            column![
+                horizontal_variant("Default", ui::SeparatorVariant::Default),
+                horizontal_variant("Secondary", ui::SeparatorVariant::Secondary),
+                horizontal_variant("Tertiary", ui::SeparatorVariant::Tertiary),
+                row![
+                    text("Overview").size(12).font(fonts::REGULAR),
+                    ui::Separator::new().orientation(ui::SeparatorOrientation::Vertical),
+                    text("Components").size(12).font(fonts::REGULAR),
+                    ui::Separator::new().orientation(ui::SeparatorOrientation::Vertical),
+                    text("Source").size(12).font(fonts::REGULAR),
+                ]
+                .height(22)
+                .spacing(14)
+                .align_y(Alignment::Center),
+            ]
+            .spacing(16),
+        )
+    }
+
+    fn typography_showcase(&self) -> Element<'_, Message> {
+        let heading_scale = column![
+            ui::Typography::heading(1, "Build better interfaces")
+                .on_copy(Message::TypographyCopied),
+            ui::Typography::heading(2, "Typography stays semantic")
+                .on_copy(Message::TypographyCopied),
+            ui::Typography::heading(3, "Composable by default").on_copy(Message::TypographyCopied),
+            ui::Typography::heading(4, "Application section").on_copy(Message::TypographyCopied),
+            ui::Typography::heading(5, "Card title").on_copy(Message::TypographyCopied),
+            ui::Typography::heading(6, "Compact heading").on_copy(Message::TypographyCopied),
+        ]
+        .spacing(8)
+        .width(Fill);
+        let body_scale = column![
+            ui::Typography::paragraph(
+                "Primary body text uses the bundled HarmonyOS Sans family and the HeroUI line-height scale.",
+            )
+            .width(Fill)
+            .on_copy(Message::TypographyCopied),
+            ui::Typography::new("Secondary body copy for descriptions and table content.")
+                .kind(ui::TypographyType::BodySmall)
+                .color(ui::TypographyColor::Muted)
+                .width(Fill)
+                .on_copy(Message::TypographyCopied),
+            ui::Typography::new("Caption, badge helper text, and fine print.")
+                .kind(ui::TypographyType::BodyExtraSmall)
+                .color(ui::TypographyColor::Muted)
+                .on_copy(Message::TypographyCopied),
+            ui::Typography::code("cargo add iced").on_copy(Message::TypographyCopied),
+            ui::Typography::new("Centered semantic text")
+                .kind(ui::TypographyType::BodySmall)
+                .weight(ui::TypographyWeight::Medium)
+                .align(ui::TypographyAlign::Center)
+                .width(Fill)
+                .on_copy(Message::TypographyCopied),
+        ]
+        .spacing(12)
+        .width(Fill);
+
+        self.component_card(
+            "Typography",
+            "Semantic heading, paragraph, caption, and inline-code primitives using local fonts.",
+            row![heading_scale, body_scale]
+                .spacing(28)
+                .align_y(Alignment::Start),
+        )
+    }
+
+    fn scroll_shadow_showcase(&self) -> Element<'_, Message> {
+        let vertical_items: Vec<Element<'_, Message>> = (1..=9)
+            .map(|index| {
+                container(
+                    row![
+                        container(text(format!("{index:02}")).size(10).font(fonts::BOLD)).width(28),
+                        column![
+                            text(format!("Component token {index}"))
+                                .size(12)
+                                .font(fonts::MEDIUM),
+                            text("Shared spacing and semantic color")
+                                .size(10)
+                                .font(fonts::REGULAR)
+                                .color(ui::INK_MUTED),
+                        ]
+                        .spacing(2),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                )
+                .height(48)
+                .padding([4, 8])
+                .into()
+            })
+            .collect();
+        let horizontal_items: Vec<Element<'_, Message>> = (1..=8)
+            .map(|index| {
+                container(
+                    column![
+                        text(format!("Panel {index}")).size(12).font(fonts::BOLD),
+                        text("Scrollable item")
+                            .size(10)
+                            .font(fonts::REGULAR)
+                            .color(ui::INK_MUTED),
+                    ]
+                    .spacing(4),
+                )
+                .width(132)
+                .height(74)
+                .padding(12)
+                .style(|_| container::Style {
+                    border: iced::Border {
+                        color: ui::LINE,
+                        width: 1.0,
+                        radius: 8.0.into(),
+                    },
+                    ..container::Style::default()
+                })
+                .into()
+            })
+            .collect();
+
+        let vertical: Element<'_, Message> =
+            ui::ScrollShadow::new(column(vertical_items).spacing(2).width(Fill))
+                .height(166)
+                .hide_scrollbar(true)
+                .size(32.0)
+                .into();
+        let horizontal: Element<'_, Message> =
+            ui::ScrollShadow::new(row(horizontal_items).spacing(10).height(74))
+                .orientation(ui::ScrollShadowOrientation::Horizontal)
+                .height(74)
+                .hide_scrollbar(true)
+                .size(32.0)
+                .into();
+
+        self.component_card(
+            "ScrollShadow",
+            "Automatic overflow fades follow the current scroll boundary in either direction.",
+            column![
+                row![
+                    column![
+                        text("Vertical")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        vertical,
+                    ]
+                    .spacing(8)
+                    .width(Fill),
+                    column![
+                        text("Visibility")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        ui::Typography::new(
+                            "The upper fade appears after leaving the start; the lower fade clears at the end.",
+                        )
+                        .kind(ui::TypographyType::BodySmall)
+                        .color(ui::TypographyColor::Muted)
+                        .width(Fill)
+                        .on_copy(Message::TypographyCopied),
+                    ]
+                    .spacing(8)
+                    .width(Fill),
+                ]
+                .spacing(24)
+                .align_y(Alignment::Start),
+                text("Horizontal")
+                    .size(11)
+                    .font(fonts::MEDIUM)
+                    .color(ui::INK_MUTED),
+                horizontal,
+            ]
+            .spacing(10),
+        )
     }
 
     fn card_and_toast_showcase(&self) -> Element<'_, Message> {
@@ -1371,9 +1780,9 @@ impl Launcher {
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
-                progress_bar(0.0..=100.0, 76.0)
-                    .girth(7)
-                    .style(ui::progress_style),
+                ui::ProgressBar::new(76.0)
+                    .color(ui::ProgressBarColor::Success)
+                    .size(ui::ProgressBarSize::Small),
             ]
             .spacing(12),
         )
@@ -1712,6 +2121,30 @@ impl Launcher {
                 ]
                 .spacing(18)
                 .align_y(Alignment::Start),
+                column![
+                    row![
+                        text("Pagination")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        space::horizontal(),
+                        text(format!(
+                            "Page {} of {}",
+                            self.pagination_page, PAGINATION_DEMO_TOTAL_PAGES
+                        ))
+                        .size(11)
+                        .font(fonts::REGULAR)
+                        .color(ui::INK_MUTED),
+                    ]
+                    .align_y(Alignment::Center),
+                    ui::pagination(
+                        self.pagination_page,
+                        PAGINATION_DEMO_TOTAL_PAGES,
+                        Message::PaginationChanged,
+                    ),
+                ]
+                .spacing(8)
+                .width(Fill),
             ]
             .spacing(16),
         )
@@ -1981,9 +2414,12 @@ impl Launcher {
 
 #[cfg(test)]
 mod tests {
-    use super::{DropdownAction, KeyboardScope, Launcher, Message, ModalKind, Page, ToastDemo};
+    use super::{
+        DropdownAction, KeyboardScope, Launcher, Message, ModalKind, PAGINATION_DEMO_TOTAL_PAGES,
+        Page, ToastDemo,
+    };
     use crate::ui;
-    use iced::{Point, time::Duration};
+    use iced::{Point, time::Duration, time::Instant};
 
     #[test]
     fn controls_update_without_side_effects() {
@@ -2080,6 +2516,35 @@ mod tests {
     }
 
     #[test]
+    fn pagination_updates_and_clamps_to_the_available_pages() {
+        let (mut launcher, _) = Launcher::new();
+
+        assert_eq!(launcher.pagination_page, 6);
+        let _ = launcher.update(Message::PaginationChanged(11));
+        assert_eq!(launcher.pagination_page, 11);
+
+        let _ = launcher.update(Message::PaginationChanged(0));
+        assert_eq!(launcher.pagination_page, 1);
+
+        let _ = launcher.update(Message::PaginationChanged(usize::MAX));
+        assert_eq!(launcher.pagination_page, PAGINATION_DEMO_TOTAL_PAGES);
+    }
+
+    #[test]
+    fn indeterminate_progress_advances_on_the_component_page() {
+        let (mut launcher, _) = Launcher::new();
+        let start = Instant::now();
+
+        let _ = launcher.update(Message::Tick(start));
+        let _ = launcher.update(Message::Tick(start + Duration::from_millis(750)));
+        assert!((launcher.indeterminate_progress - 0.5).abs() < f32::EPSILON);
+        assert!((launcher.indeterminate_circle_progress - 0.75).abs() < f32::EPSILON);
+
+        let _ = launcher.update(Message::Navigate(Page::Tokens));
+        assert!(launcher.progress_last_tick.is_none());
+    }
+
+    #[test]
     fn global_message_can_expire_or_be_dismissed() {
         let (mut launcher, _) = Launcher::new();
 
@@ -2122,6 +2587,19 @@ mod tests {
             .unwrap();
         let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(1)));
         assert!(launcher.toasts.is_empty());
+    }
+
+    #[test]
+    fn typography_copy_feedback_uses_a_success_toast() {
+        let (mut launcher, _) = Launcher::new();
+
+        let _ = launcher.update(Message::TypographyCopied);
+
+        let toast = launcher.toasts.last().unwrap();
+        assert_eq!(toast.title, "复制成功");
+        assert_eq!(toast.description, "选中的文本已复制到剪贴板。");
+        assert_eq!(toast.variant, ui::ToastVariant::Success);
+        assert_eq!(launcher.toast_placement, ui::ToastPlacement::Top);
     }
 
     #[test]

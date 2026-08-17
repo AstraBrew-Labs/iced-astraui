@@ -4,17 +4,18 @@
 //! consistent radii, and one blue/cyan palette shared by every primitive.
 
 use iced::advanced::Renderer as _;
+use iced::advanced::text::{Paragraph as _, Renderer as _};
 use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, overlay, renderer};
 use iced::animation::{Animation, Easing};
 use iced::time::{Duration, Instant};
 use iced::widget::{
-    button, checkbox, column, container, mouse_area, overlay::menu, pick_list, progress_bar,
-    radio as iced_radio, row, rule, space, stack, text, text_input,
+    button, canvas as iced_canvas, checkbox, column, container, mouse_area, overlay::menu,
+    pick_list, radio as iced_radio, row, rule, scrollable, space, stack, text, text_input,
 };
 use iced::{
-    Background, Border, Color, Element, Event, Fill, Font, Length, Pixels, Point, Rectangle,
-    Shadow, Size, Theme, Vector, keyboard, touch,
+    Background, Border, Color, Element, Event, Fill, Font, Length, Pixels, Point, Radians,
+    Rectangle, Shadow, Size, Theme, Vector, keyboard, touch,
 };
 use lucide_icons::Icon as LucideIcon;
 
@@ -55,6 +56,9 @@ const SWITCH_WIDTH: f32 = 40.0;
 const SWITCH_HEIGHT: f32 = 20.0;
 const SWITCH_THUMB_SIZE: f32 = 16.0;
 const SWITCH_PADDING: f32 = 2.0;
+
+const PAGINATION_ITEM_SIZE: f32 = 34.0;
+const PAGINATION_NAV_WIDTH: f32 = 94.0;
 
 const MOTION_DURATION: Duration = Duration::from_millis(140);
 
@@ -234,12 +238,1446 @@ pub enum ToastVariant {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgressBarColor {
+    Default,
+    #[default]
+    Accent,
+    Success,
+    Warning,
+    Danger,
+}
+
+impl ProgressBarColor {
+    const fn fill(self) -> Color {
+        match self {
+            Self::Default => NAVY_800,
+            Self::Accent => BLUE_600,
+            Self::Success => SUCCESS,
+            Self::Warning => WARNING,
+            Self::Danger => DANGER,
+        }
+    }
+}
+
+pub type ProgressCircleColor = ProgressBarColor;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgressBarSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl ProgressBarSize {
+    const fn girth(self) -> f32 {
+        match self {
+            Self::Small => 4.0,
+            Self::Medium => 8.0,
+            Self::Large => 12.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgressCircleSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SeparatorOrientation {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SeparatorVariant {
+    #[default]
+    Default,
+    Secondary,
+    Tertiary,
+}
+
+impl SeparatorVariant {
+    const fn color(self) -> Color {
+        match self {
+            Self::Default => LINE,
+            Self::Secondary => Color::from_rgb8(230, 230, 232),
+            Self::Tertiary => Color::from_rgb8(239, 239, 240),
+        }
+    }
+}
+
+/// HeroUI 风格的内容分隔符，默认横向、1px、占满可用长度。
+#[derive(Debug, Clone, Copy)]
+pub struct Separator {
+    orientation: SeparatorOrientation,
+    variant: SeparatorVariant,
+    thickness: f32,
+    fill_mode: rule::FillMode,
+}
+
+impl Separator {
+    pub const fn new() -> Self {
+        Self {
+            orientation: SeparatorOrientation::Horizontal,
+            variant: SeparatorVariant::Default,
+            thickness: 1.0,
+            fill_mode: rule::FillMode::Full,
+        }
+    }
+
+    pub const fn orientation(mut self, orientation: SeparatorOrientation) -> Self {
+        self.orientation = orientation;
+        self
+    }
+
+    pub const fn variant(mut self, variant: SeparatorVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    pub fn thickness(mut self, thickness: f32) -> Self {
+        self.thickness = thickness.max(1.0);
+        self
+    }
+
+    pub const fn fill_mode(mut self, fill_mode: rule::FillMode) -> Self {
+        self.fill_mode = fill_mode;
+        self
+    }
+}
+
+impl Default for Separator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a, Message> From<Separator> for Element<'a, Message>
+where
+    Message: 'a,
+{
+    fn from(separator: Separator) -> Self {
+        let color = separator.variant.color();
+        let fill_mode = separator.fill_mode;
+        let style = move |_theme: &Theme| rule::Style {
+            color,
+            radius: 1.0.into(),
+            fill_mode,
+            snap: true,
+        };
+
+        match separator.orientation {
+            SeparatorOrientation::Horizontal => {
+                rule::horizontal(separator.thickness).style(style).into()
+            }
+            SeparatorOrientation::Vertical => {
+                rule::vertical(separator.thickness).style(style).into()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TypographyType {
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    H6,
+    #[default]
+    Body,
+    BodySmall,
+    BodyExtraSmall,
+    Code,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TypographyAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TypographyColor {
+    #[default]
+    Default,
+    Muted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypographyWeight {
+    Normal,
+    Medium,
+    Semibold,
+    Bold,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TypographyMetrics {
+    size: f32,
+    line_height: f32,
+    font: Font,
+}
+
+impl TypographyType {
+    const fn metrics(self) -> TypographyMetrics {
+        match self {
+            Self::H1 => TypographyMetrics {
+                size: 36.0,
+                line_height: 40.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::H2 => TypographyMetrics {
+                size: 30.0,
+                line_height: 35.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::H3 => TypographyMetrics {
+                size: 24.0,
+                line_height: 30.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::H4 => TypographyMetrics {
+                size: 20.0,
+                line_height: 27.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::H5 => TypographyMetrics {
+                size: 18.0,
+                line_height: 25.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::H6 => TypographyMetrics {
+                size: 16.0,
+                line_height: 24.0,
+                font: crate::fonts::BOLD,
+            },
+            Self::Body => TypographyMetrics {
+                size: 16.0,
+                line_height: 28.0,
+                font: crate::fonts::REGULAR,
+            },
+            Self::BodySmall => TypographyMetrics {
+                size: 14.0,
+                line_height: 21.0,
+                font: crate::fonts::REGULAR,
+            },
+            Self::BodyExtraSmall => TypographyMetrics {
+                size: 12.0,
+                line_height: 15.0,
+                font: crate::fonts::REGULAR,
+            },
+            Self::Code => TypographyMetrics {
+                size: 14.0,
+                line_height: 20.0,
+                font: crate::fonts::MEDIUM,
+            },
+        }
+    }
+}
+
+/// 标题、正文和行内代码共用的语义化排版原语。
+#[derive(Debug, Clone)]
+pub struct Typography {
+    content: String,
+    kind: TypographyType,
+    align: TypographyAlign,
+    color: TypographyColor,
+    weight: Option<TypographyWeight>,
+    truncate: bool,
+    width: Length,
+}
+
+#[derive(Debug, Clone)]
+pub struct CopyableTypography<Message> {
+    typography: Typography,
+    on_copy: Message,
+}
+
+impl Typography {
+    pub fn new(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            kind: TypographyType::Body,
+            align: TypographyAlign::Start,
+            color: TypographyColor::Default,
+            weight: None,
+            truncate: false,
+            width: Length::Shrink,
+        }
+    }
+
+    pub fn heading(level: u8, content: impl Into<String>) -> Self {
+        Self::new(content).kind(match level.clamp(1, 6) {
+            1 => TypographyType::H1,
+            2 => TypographyType::H2,
+            3 => TypographyType::H3,
+            4 => TypographyType::H4,
+            5 => TypographyType::H5,
+            _ => TypographyType::H6,
+        })
+    }
+
+    pub fn paragraph(content: impl Into<String>) -> Self {
+        Self::new(content)
+    }
+
+    pub fn code(content: impl Into<String>) -> Self {
+        Self::new(content).kind(TypographyType::Code)
+    }
+
+    pub fn on_copy<Message>(self, message: Message) -> CopyableTypography<Message> {
+        CopyableTypography {
+            typography: self,
+            on_copy: message,
+        }
+    }
+
+    pub const fn kind(mut self, kind: TypographyType) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    pub const fn align(mut self, align: TypographyAlign) -> Self {
+        self.align = align;
+        self
+    }
+
+    pub const fn color(mut self, color: TypographyColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub const fn weight(mut self, weight: TypographyWeight) -> Self {
+        self.weight = Some(weight);
+        self
+    }
+
+    pub const fn truncate(mut self, truncate: bool) -> Self {
+        self.truncate = truncate;
+        self
+    }
+
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
+        self
+    }
+}
+
+fn typography_font(default: Font, weight: Option<TypographyWeight>) -> Font {
+    match weight {
+        None => default,
+        Some(TypographyWeight::Normal) => crate::fonts::REGULAR,
+        Some(TypographyWeight::Medium) => crate::fonts::MEDIUM,
+        Some(TypographyWeight::Semibold | TypographyWeight::Bold) => crate::fonts::BOLD,
+    }
+}
+
+fn translated_typography_context_position(position: Point, translation: Vector) -> Point {
+    position + translation
+}
+
+fn typography_context_menu_text_layout(bounds: Rectangle) -> (Size, Point) {
+    (
+        Size::new((bounds.width - 24.0).max(0.0), bounds.height),
+        Point::new(bounds.x + 12.0, bounds.center_y()),
+    )
+}
+
+type TypographyParagraph = <iced::Renderer as iced::advanced::text::Renderer>::Paragraph;
+
+#[derive(Debug, Default)]
+struct SelectableTypographyState {
+    paragraph: TypographyParagraph,
+    anchor: usize,
+    focus: usize,
+    dragging: bool,
+    focused: bool,
+    modifiers: keyboard::Modifiers,
+    context_menu: Option<Point>,
+}
+
+impl SelectableTypographyState {
+    fn selection(&self) -> Option<std::ops::Range<usize>> {
+        let start = self.anchor.min(self.focus);
+        let end = self.anchor.max(self.focus);
+        (start < end).then_some(start..end)
+    }
+
+    fn begin_selection(&mut self, index: usize) {
+        self.anchor = index;
+        self.focus = index;
+        self.dragging = true;
+        self.focused = true;
+        self.context_menu = None;
+    }
+
+    fn extend_selection(&mut self, index: usize) -> bool {
+        if self.focus == index {
+            false
+        } else {
+            self.focus = index;
+            true
+        }
+    }
+}
+
+struct SelectableTypography<'a, Message> {
+    content: String,
+    metrics: TypographyMetrics,
+    color: Color,
+    align: iced::advanced::text::Alignment,
+    wrapping: iced::advanced::text::Wrapping,
+    width: Length,
+    on_copy: Option<Box<dyn Fn() -> Message + 'a>>,
+}
+
+impl<Message> SelectableTypography<'_, Message> {
+    fn char_boundary_at_or_before(&self, index: usize) -> usize {
+        let mut index = index.min(self.content.len());
+        while !self.content.is_char_boundary(index) {
+            index = index.saturating_sub(1);
+        }
+        index
+    }
+
+    fn logical_line_start(&self, line: usize) -> usize {
+        self.content
+            .split_inclusive('\n')
+            .take(line)
+            .map(str::len)
+            .sum()
+    }
+
+    fn clamp_selection(&self, state: &mut SelectableTypographyState) {
+        state.anchor = self.char_boundary_at_or_before(state.anchor);
+        state.focus = self.char_boundary_at_or_before(state.focus);
+    }
+
+    fn selected_text<'a>(&'a self, state: &SelectableTypographyState) -> Option<&'a str> {
+        state
+            .selection()
+            .and_then(|selection| self.content.get(selection))
+    }
+
+    fn span<'a>(&self, content: &'a str) -> iced::advanced::text::Span<'a, (), Font> {
+        iced::advanced::text::Span::new(content)
+            .size(self.metrics.size)
+            .line_height(iced::advanced::text::LineHeight::Absolute(Pixels(
+                self.metrics.line_height,
+            )))
+            .font(self.metrics.font)
+            .color(self.color)
+    }
+
+    fn paragraph(
+        &self,
+        bounds: Size,
+        selection: Option<std::ops::Range<usize>>,
+    ) -> TypographyParagraph {
+        let selection = selection.map(|selection| {
+            self.char_boundary_at_or_before(selection.start)
+                ..self.char_boundary_at_or_before(selection.end)
+        });
+        let mut spans: Vec<iced::advanced::text::Span<'_, (), Font>> = Vec::with_capacity(3);
+        if let Some(selection) = selection.filter(|selection| selection.start < selection.end) {
+            if selection.start > 0 {
+                spans.push(self.span(&self.content[..selection.start]));
+            }
+            spans.push(
+                self.span(&self.content[selection.clone()])
+                    .background(Color::from_rgba(BLUE_600.r, BLUE_600.g, BLUE_600.b, 0.24)),
+            );
+            if selection.end < self.content.len() {
+                spans.push(self.span(&self.content[selection.end..]));
+            }
+        } else {
+            spans.push(self.span(&self.content));
+        }
+
+        TypographyParagraph::with_spans(iced::advanced::text::Text {
+            content: spans.as_slice(),
+            bounds,
+            size: Pixels(self.metrics.size),
+            line_height: iced::advanced::text::LineHeight::Absolute(Pixels(
+                self.metrics.line_height,
+            )),
+            font: self.metrics.font,
+            align_x: self.align,
+            align_y: iced::alignment::Vertical::Top,
+            shaping: iced::advanced::text::Shaping::Auto,
+            wrapping: self.wrapping,
+        })
+    }
+
+    fn rebuild(&self, state: &mut SelectableTypographyState, bounds: Size) {
+        self.clamp_selection(state);
+        state.paragraph = self.paragraph(bounds, state.selection());
+    }
+
+    fn text_anchor(&self, paragraph: &TypographyParagraph, bounds: Rectangle) -> Point {
+        bounds.anchor(
+            paragraph.min_bounds(),
+            paragraph.align_x(),
+            paragraph.align_y(),
+        )
+    }
+
+    fn hit_index(
+        &self,
+        paragraph: &TypographyParagraph,
+        bounds: Rectangle,
+        position: Point,
+    ) -> usize {
+        let anchor = self.text_anchor(paragraph, bounds);
+        let local = Point::new(position.x - anchor.x, position.y - anchor.y);
+        paragraph
+            .buffer()
+            .hit(local.x, local.y)
+            .map(|cursor| self.logical_line_start(cursor.line) + cursor.index)
+            .map(|index| self.char_boundary_at_or_before(index))
+            .unwrap_or_else(|| {
+                if local.x <= 0.0 && local.y <= 0.0 {
+                    0
+                } else {
+                    self.content.len()
+                }
+            })
+    }
+}
+
+impl<Message> Widget<Message, Theme, iced::Renderer> for SelectableTypography<'_, Message> {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<SelectableTypographyState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(SelectableTypographyState::default())
+    }
+
+    fn size(&self) -> Size<Length> {
+        Size::new(self.width, Length::Shrink)
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        _renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        let state = tree.state.downcast_mut::<SelectableTypographyState>();
+        layout::sized(limits, self.width, Length::Shrink, |limits| {
+            self.rebuild(state, limits.max());
+            state.paragraph.min_bounds()
+        })
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _renderer: &iced::Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        _viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_mut::<SelectableTypographyState>();
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if let Some(position) = cursor.position_over(layout.bounds())
+                    && self.selected_text(state).is_some()
+                {
+                    state.context_menu = Some(position);
+                    state.focused = true;
+                    shell.request_redraw();
+                    shell.capture_event();
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                state.context_menu = None;
+                if let Some(position) = cursor.position_over(layout.bounds()) {
+                    let index = self.hit_index(&state.paragraph, layout.bounds(), position);
+                    state.begin_selection(index);
+                    self.rebuild(state, layout.bounds().size());
+                    shell.request_redraw();
+                    shell.capture_event();
+                } else if state.focused || state.selection().is_some() {
+                    state.focused = false;
+                    state.dragging = false;
+                    state.anchor = 0;
+                    state.focus = 0;
+                    self.rebuild(state, layout.bounds().size());
+                    shell.request_redraw();
+                }
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) if state.dragging => {
+                let position = cursor.position().unwrap_or(*position);
+                let index = self.hit_index(&state.paragraph, layout.bounds(), position);
+                if state.extend_selection(index) {
+                    self.rebuild(state, layout.bounds().size());
+                    shell.request_redraw();
+                }
+                shell.capture_event();
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if state.dragging => {
+                state.dragging = false;
+                shell.capture_event();
+            }
+            Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                state.modifiers = *modifiers;
+            }
+            Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) if state.focused => {
+                let keyboard::Key::Character(character) = key else {
+                    return;
+                };
+                if state.modifiers.command() && character.eq_ignore_ascii_case("c") {
+                    if let Some(selection) = self.selected_text(state) {
+                        clipboard.write(
+                            iced::advanced::clipboard::Kind::Standard,
+                            selection.to_owned(),
+                        );
+                    }
+                    shell.capture_event();
+                } else if state.modifiers.command() && character.eq_ignore_ascii_case("a") {
+                    state.anchor = 0;
+                    state.focus = self.content.len();
+                    self.rebuild(state, layout.bounds().size());
+                    shell.request_redraw();
+                    shell.capture_event();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut iced::Renderer,
+        _theme: &Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_ref::<SelectableTypographyState>();
+        let anchor = self.text_anchor(&state.paragraph, layout.bounds());
+        if let Some(selection) = state.selection()
+            && selection.start < selection.end
+        {
+            let selected_span = usize::from(selection.start > 0);
+            let highlight = Color::from_rgba(BLUE_600.r, BLUE_600.g, BLUE_600.b, 0.24);
+            if let Some(visible_bounds) = layout.bounds().intersection(viewport) {
+                renderer.with_layer(visible_bounds, |renderer| {
+                    for selection_bounds in state.paragraph.span_bounds(selected_span) {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: Rectangle {
+                                    x: anchor.x + selection_bounds.x,
+                                    y: anchor.y + selection_bounds.y,
+                                    ..selection_bounds
+                                },
+                                border: Border {
+                                    radius: 3.0.into(),
+                                    ..Border::default()
+                                },
+                                ..renderer::Quad::default()
+                            },
+                            Background::Color(highlight),
+                        );
+                    }
+                });
+            }
+        }
+        renderer.fill_paragraph(&state.paragraph, anchor, self.color, *viewport);
+    }
+
+    fn operate(
+        &mut self,
+        _tree: &mut Tree,
+        layout: Layout<'_>,
+        _renderer: &iced::Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        operation.text(None, layout.bounds(), &self.content);
+    }
+
+    fn mouse_interaction(
+        &self,
+        _tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+        _renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        if cursor.is_over(layout.bounds()) {
+            mouse::Interaction::Text
+        } else {
+            mouse::Interaction::None
+        }
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut Tree,
+        _layout: Layout<'a>,
+        _renderer: &iced::Renderer,
+        _viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'a, Message, Theme, iced::Renderer>> {
+        let state = tree.state.downcast_mut::<SelectableTypographyState>();
+        let origin = translated_typography_context_position(state.context_menu?, translation);
+        let selected = self.selected_text(state)?.to_owned();
+
+        Some(overlay::Element::new(Box::new(TypographyContextMenu {
+            origin,
+            selected,
+            on_copy: self.on_copy.as_deref(),
+            open: &mut state.context_menu,
+        })))
+    }
+}
+
+struct TypographyContextMenu<'a, Message> {
+    origin: Point,
+    selected: String,
+    on_copy: Option<&'a dyn Fn() -> Message>,
+    open: &'a mut Option<Point>,
+}
+
+impl<Message> overlay::Overlay<Message, Theme, iced::Renderer>
+    for TypographyContextMenu<'_, Message>
+{
+    fn layout(&mut self, _renderer: &iced::Renderer, bounds: Size) -> layout::Node {
+        let size = Size::new(112.0, 36.0);
+        let margin = 8.0;
+        let origin = Point::new(
+            (self.origin.x + 2.0).clamp(margin, (bounds.width - size.width - margin).max(margin)),
+            (self.origin.y + 2.0).clamp(margin, (bounds.height - size.height - margin).max(margin)),
+        );
+        layout::Node::new(size).move_to(origin)
+    }
+
+    fn update(
+        &mut self,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _renderer: &iced::Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+    ) {
+        let inside = cursor.is_over(layout.bounds());
+        let copy = matches!(
+            event,
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) if inside
+        );
+        let dismiss = matches!(
+            event,
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                ..
+            }) | Event::Mouse(mouse::Event::ButtonPressed(_)) if !inside
+        );
+
+        if copy {
+            clipboard.write(
+                iced::advanced::clipboard::Kind::Standard,
+                self.selected.clone(),
+            );
+            if let Some(on_copy) = self.on_copy {
+                shell.publish(on_copy());
+            }
+            *self.open = None;
+            shell.capture_event();
+        } else if dismiss {
+            *self.open = None;
+            shell.capture_event();
+        }
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut iced::Renderer,
+        _theme: &Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+    ) {
+        let bounds = layout.bounds();
+        let (text_bounds, text_origin) = typography_context_menu_text_layout(bounds);
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                border: Border {
+                    color: LINE,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                ..renderer::Quad::default()
+            },
+            Background::Color(SURFACE),
+        );
+        renderer.fill_text(
+            iced::advanced::text::Text {
+                content: "复制".to_owned(),
+                bounds: text_bounds,
+                size: Pixels(13.0),
+                line_height: iced::advanced::text::LineHeight::Absolute(Pixels(20.0)),
+                font: crate::fonts::MEDIUM,
+                align_x: iced::advanced::text::Alignment::Left,
+                align_y: iced::alignment::Vertical::Center,
+                shaping: iced::advanced::text::Shaping::Auto,
+                wrapping: iced::advanced::text::Wrapping::None,
+            },
+            text_origin,
+            INK,
+            bounds,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        if cursor.is_over(layout.bounds()) {
+            mouse::Interaction::Pointer
+        } else {
+            mouse::Interaction::default()
+        }
+    }
+}
+
+fn typography_element<'a, Message: 'a>(
+    typography: Typography,
+    on_copy: Option<Box<dyn Fn() -> Message + 'a>>,
+) -> Element<'a, Message> {
+    let kind = typography.kind;
+    let metrics = kind.metrics();
+    let color = match typography.color {
+        TypographyColor::Default => INK,
+        TypographyColor::Muted => INK_MUTED,
+    };
+    let align = match typography.align {
+        TypographyAlign::Start => iced::advanced::text::Alignment::Left,
+        TypographyAlign::Center => iced::advanced::text::Alignment::Center,
+        TypographyAlign::End => iced::advanced::text::Alignment::Right,
+    };
+    let wrapping = if typography.truncate {
+        iced::advanced::text::Wrapping::None
+    } else {
+        iced::advanced::text::Wrapping::Word
+    };
+    let content: Element<'a, Message> = Element::new(SelectableTypography {
+        content: typography.content,
+        metrics: TypographyMetrics {
+            font: typography_font(metrics.font, typography.weight),
+            ..metrics
+        },
+        color,
+        align,
+        wrapping,
+        width: typography.width,
+        on_copy,
+    });
+
+    if kind == TypographyType::Code {
+        container(content)
+            .padding([2, 6])
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgb8(244, 244, 245))),
+                border: Border {
+                    radius: 6.0.into(),
+                    ..Border::default()
+                },
+                ..container::Style::default()
+            })
+            .into()
+    } else {
+        content
+    }
+}
+
+impl<'a, Message: 'a> From<Typography> for Element<'a, Message> {
+    fn from(typography: Typography) -> Self {
+        typography_element(typography, None)
+    }
+}
+
+impl<'a, Message> From<CopyableTypography<Message>> for Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    fn from(copyable: CopyableTypography<Message>) -> Self {
+        let on_copy = copyable.on_copy;
+        typography_element(copyable.typography, Some(Box::new(move || on_copy.clone())))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScrollShadowOrientation {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScrollShadowVisibility {
+    #[default]
+    Auto,
+    Both,
+    Top,
+    Bottom,
+    Left,
+    Right,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ScrollShadowEdges {
+    #[default]
+    None,
+    Before,
+    After,
+    Both,
+}
+
+impl ScrollShadowEdges {
+    const fn before(self) -> bool {
+        matches!(self, Self::Before | Self::Both)
+    }
+
+    const fn after(self) -> bool {
+        matches!(self, Self::After | Self::Both)
+    }
+
+    const fn visibility(self, orientation: ScrollShadowOrientation) -> ScrollShadowVisibility {
+        match (self, orientation) {
+            (Self::None, _) => ScrollShadowVisibility::None,
+            (Self::Both, _) => ScrollShadowVisibility::Both,
+            (Self::Before, ScrollShadowOrientation::Vertical) => ScrollShadowVisibility::Top,
+            (Self::After, ScrollShadowOrientation::Vertical) => ScrollShadowVisibility::Bottom,
+            (Self::Before, ScrollShadowOrientation::Horizontal) => ScrollShadowVisibility::Left,
+            (Self::After, ScrollShadowOrientation::Horizontal) => ScrollShadowVisibility::Right,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ScrollMetrics {
+    bounds: Rectangle,
+    content_bounds: Rectangle,
+    translation: Vector,
+}
+
+fn automatic_scroll_shadow_edges(
+    metrics: ScrollMetrics,
+    orientation: ScrollShadowOrientation,
+    offset: f32,
+) -> ScrollShadowEdges {
+    let (scroll_start, viewport_size, content_size) = match orientation {
+        ScrollShadowOrientation::Vertical => (
+            metrics.translation.y,
+            metrics.bounds.height,
+            metrics.content_bounds.height,
+        ),
+        ScrollShadowOrientation::Horizontal => (
+            metrics.translation.x,
+            metrics.bounds.width,
+            metrics.content_bounds.width,
+        ),
+    };
+    let offset = offset.max(0.0);
+    let has_before = content_size > viewport_size && scroll_start > offset;
+    let has_after =
+        content_size > viewport_size && scroll_start + viewport_size + offset < content_size - 1.0;
+
+    match (has_before, has_after) {
+        (true, true) => ScrollShadowEdges::Both,
+        (true, false) => ScrollShadowEdges::Before,
+        (false, true) => ScrollShadowEdges::After,
+        (false, false) => ScrollShadowEdges::None,
+    }
+}
+
+fn controlled_scroll_shadow_edges(
+    visibility: ScrollShadowVisibility,
+    orientation: ScrollShadowOrientation,
+) -> Option<ScrollShadowEdges> {
+    match visibility {
+        ScrollShadowVisibility::Auto => None,
+        ScrollShadowVisibility::Both => Some(ScrollShadowEdges::Both),
+        ScrollShadowVisibility::Top | ScrollShadowVisibility::Left => {
+            Some(ScrollShadowEdges::Before)
+        }
+        ScrollShadowVisibility::Bottom | ScrollShadowVisibility::Right => {
+            Some(ScrollShadowEdges::After)
+        }
+        ScrollShadowVisibility::None => Some(ScrollShadowEdges::None),
+    }
+    .map(|edges| match (visibility, orientation) {
+        (
+            ScrollShadowVisibility::Top | ScrollShadowVisibility::Bottom,
+            ScrollShadowOrientation::Horizontal,
+        )
+        | (
+            ScrollShadowVisibility::Left | ScrollShadowVisibility::Right,
+            ScrollShadowOrientation::Vertical,
+        ) => ScrollShadowEdges::None,
+        _ => edges,
+    })
+}
+
+/// 可滚动内容容器；根据当前位置自动在起点或终点绘制 HeroUI 风格渐隐提示。
+pub struct ScrollShadow<'a, Message> {
+    content: Element<'a, Message>,
+    orientation: ScrollShadowOrientation,
+    visibility: ScrollShadowVisibility,
+    size: f32,
+    offset: f32,
+    is_enabled: bool,
+    hide_scrollbar: bool,
+    width: Length,
+    height: Length,
+    fade_color: Color,
+    on_visibility_change: Option<Box<dyn Fn(ScrollShadowVisibility) -> Message + 'a>>,
+}
+
+impl<'a, Message> ScrollShadow<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(content: impl Into<Element<'a, Message>>) -> Self {
+        Self {
+            content: content.into(),
+            orientation: ScrollShadowOrientation::Vertical,
+            visibility: ScrollShadowVisibility::Auto,
+            size: 40.0,
+            offset: 0.0,
+            is_enabled: true,
+            hide_scrollbar: false,
+            width: Length::Fill,
+            height: Length::Fill,
+            fade_color: SURFACE,
+            on_visibility_change: None,
+        }
+    }
+
+    pub const fn orientation(mut self, orientation: ScrollShadowOrientation) -> Self {
+        self.orientation = orientation;
+        self
+    }
+
+    pub const fn visibility(mut self, visibility: ScrollShadowVisibility) -> Self {
+        self.visibility = visibility;
+        self
+    }
+
+    pub fn size(mut self, size: f32) -> Self {
+        self.size = size.max(0.0);
+        self
+    }
+
+    pub fn offset(mut self, offset: f32) -> Self {
+        self.offset = offset.max(0.0);
+        self
+    }
+
+    pub const fn is_enabled(mut self, is_enabled: bool) -> Self {
+        self.is_enabled = is_enabled;
+        self
+    }
+
+    pub const fn hide_scrollbar(mut self, hide_scrollbar: bool) -> Self {
+        self.hide_scrollbar = hide_scrollbar;
+        self
+    }
+
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
+        self
+    }
+
+    pub fn height(mut self, height: impl Into<Length>) -> Self {
+        self.height = height.into();
+        self
+    }
+
+    pub const fn fade_color(mut self, fade_color: Color) -> Self {
+        self.fade_color = fade_color;
+        self
+    }
+
+    pub fn on_visibility_change(
+        mut self,
+        on_visibility_change: impl Fn(ScrollShadowVisibility) -> Message + 'a,
+    ) -> Self {
+        self.on_visibility_change = Some(Box::new(on_visibility_change));
+        self
+    }
+}
+
+#[derive(Debug, Default)]
+struct ScrollShadowState {
+    edges: ScrollShadowEdges,
+}
+
+#[derive(Debug, Default)]
+struct ReadScrollMetrics {
+    metrics: Option<ScrollMetrics>,
+}
+
+impl iced::advanced::widget::Operation for ReadScrollMetrics {
+    fn traverse(&mut self, _operate: &mut dyn FnMut(&mut dyn iced::advanced::widget::Operation)) {}
+
+    fn scrollable(
+        &mut self,
+        _id: Option<&iced::widget::Id>,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+        translation: Vector,
+        _state: &mut dyn iced::advanced::widget::operation::Scrollable,
+    ) {
+        self.metrics.get_or_insert(ScrollMetrics {
+            bounds,
+            content_bounds,
+            translation,
+        });
+    }
+}
+
+struct ScrollShadowWidget<'a, Message> {
+    scrollable: Element<'a, Message>,
+    orientation: ScrollShadowOrientation,
+    visibility: ScrollShadowVisibility,
+    size: f32,
+    offset: f32,
+    is_enabled: bool,
+    hide_scrollbar: bool,
+    fade_color: Color,
+    on_visibility_change: Option<Box<dyn Fn(ScrollShadowVisibility) -> Message + 'a>>,
+}
+
+impl<Message> ScrollShadowWidget<'_, Message> {
+    fn metrics(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &iced::Renderer,
+    ) -> Option<ScrollMetrics> {
+        let mut operation = ReadScrollMetrics::default();
+        self.scrollable.as_widget_mut().operate(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            &mut operation,
+        );
+        operation.metrics
+    }
+
+    fn edges(&self, metrics: ScrollMetrics) -> ScrollShadowEdges {
+        if !self.is_enabled {
+            ScrollShadowEdges::None
+        } else if let Some(edges) =
+            controlled_scroll_shadow_edges(self.visibility, self.orientation)
+        {
+            edges
+        } else {
+            automatic_scroll_shadow_edges(metrics, self.orientation, self.offset)
+        }
+    }
+}
+
+impl<Message> Widget<Message, Theme, iced::Renderer> for ScrollShadowWidget<'_, Message> {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<ScrollShadowState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(ScrollShadowState::default())
+    }
+
+    fn children(&self) -> Vec<Tree> {
+        vec![Tree::new(&self.scrollable)]
+    }
+
+    fn diff(&self, tree: &mut Tree) {
+        tree.diff_children(std::slice::from_ref(&self.scrollable));
+    }
+
+    fn size(&self) -> Size<Length> {
+        self.scrollable.as_widget().size()
+    }
+
+    fn size_hint(&self) -> Size<Length> {
+        self.scrollable.as_widget().size_hint()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        let node = self
+            .scrollable
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits);
+        let metrics = self.metrics(tree, Layout::new(&node), renderer);
+        if let Some(metrics) = metrics {
+            tree.state.downcast_mut::<ScrollShadowState>().edges = self.edges(metrics);
+        }
+        node
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &iced::Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        self.scrollable
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &iced::Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        self.scrollable.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
+        if let Some(metrics) = self.metrics(tree, layout, renderer) {
+            let edges = self.edges(metrics);
+            let state = tree.state.downcast_mut::<ScrollShadowState>();
+            if state.edges != edges {
+                state.edges = edges;
+                if let Some(on_visibility_change) = self.on_visibility_change.as_ref() {
+                    shell.publish(on_visibility_change(edges.visibility(self.orientation)));
+                }
+                shell.request_redraw();
+            }
+        }
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut iced::Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        self.scrollable.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+
+        let bounds = layout.bounds();
+        let edges = tree.state.downcast_ref::<ScrollShadowState>().edges;
+        let extent = match self.orientation {
+            ScrollShadowOrientation::Vertical => self.size.min(bounds.height / 2.0),
+            ScrollShadowOrientation::Horizontal => self.size.min(bounds.width / 2.0),
+        };
+        if extent <= 0.0 || edges == ScrollShadowEdges::None {
+            return;
+        }
+
+        let opaque = Color {
+            a: self.fade_color.a * 0.98,
+            ..self.fade_color
+        };
+        let transparent = Color {
+            a: 0.0,
+            ..self.fade_color
+        };
+        renderer.with_layer(bounds, |renderer| {
+            let scrollbar_clearance = if self.hide_scrollbar { 0.0 } else { 10.0 };
+            if edges.before() {
+                let (fade_bounds, angle) = match self.orientation {
+                    ScrollShadowOrientation::Vertical => (
+                        Rectangle {
+                            width: (bounds.width - scrollbar_clearance).max(0.0),
+                            height: extent,
+                            ..bounds
+                        },
+                        Radians::PI,
+                    ),
+                    ScrollShadowOrientation::Horizontal => (
+                        Rectangle {
+                            width: extent,
+                            height: (bounds.height - scrollbar_clearance).max(0.0),
+                            ..bounds
+                        },
+                        Radians::PI / 2.0,
+                    ),
+                };
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: fade_bounds,
+                        ..renderer::Quad::default()
+                    },
+                    iced::gradient::Linear::new(angle)
+                        .add_stop(0.0, opaque)
+                        .add_stop(1.0, transparent),
+                );
+            }
+            if edges.after() {
+                let (fade_bounds, angle) = match self.orientation {
+                    ScrollShadowOrientation::Vertical => (
+                        Rectangle {
+                            y: bounds.y + bounds.height - extent,
+                            width: (bounds.width - scrollbar_clearance).max(0.0),
+                            height: extent,
+                            ..bounds
+                        },
+                        Radians(0.0),
+                    ),
+                    ScrollShadowOrientation::Horizontal => (
+                        Rectangle {
+                            x: bounds.x + bounds.width - extent,
+                            width: extent,
+                            height: (bounds.height - scrollbar_clearance).max(0.0),
+                            ..bounds
+                        },
+                        Radians(std::f32::consts::PI * 1.5),
+                    ),
+                };
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: fade_bounds,
+                        ..renderer::Quad::default()
+                    },
+                    iced::gradient::Linear::new(angle)
+                        .add_stop(0.0, opaque)
+                        .add_stop(1.0, transparent),
+                );
+            }
+        });
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        self.scrollable.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut Tree,
+        layout: Layout<'a>,
+        renderer: &iced::Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'a, Message, Theme, iced::Renderer>> {
+        self.scrollable.as_widget_mut().overlay(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            viewport,
+            translation,
+        )
+    }
+}
+
+impl<'a, Message> From<ScrollShadow<'a, Message>> for Element<'a, Message>
+where
+    Message: 'a,
+{
+    fn from(scroll_shadow: ScrollShadow<'a, Message>) -> Self {
+        let scrollbar = if scroll_shadow.hide_scrollbar {
+            scrollable::Scrollbar::hidden()
+        } else {
+            scrollable::Scrollbar::default()
+        };
+        let direction = match scroll_shadow.orientation {
+            ScrollShadowOrientation::Vertical => scrollable::Direction::Vertical(scrollbar),
+            ScrollShadowOrientation::Horizontal => scrollable::Direction::Horizontal(scrollbar),
+        };
+        let scrollable: Element<'a, Message> = scrollable(scroll_shadow.content)
+            .direction(direction)
+            .width(scroll_shadow.width)
+            .height(scroll_shadow.height)
+            .into();
+
+        Element::new(ScrollShadowWidget {
+            scrollable,
+            orientation: scroll_shadow.orientation,
+            visibility: scroll_shadow.visibility,
+            size: scroll_shadow.size,
+            offset: scroll_shadow.offset,
+            is_enabled: scroll_shadow.is_enabled,
+            hide_scrollbar: scroll_shadow.hide_scrollbar,
+            fade_color: scroll_shadow.fade_color,
+            on_visibility_change: scroll_shadow.on_visibility_change,
+        })
+    }
+}
+
+impl ProgressCircleSize {
+    const fn diameter(self) -> f32 {
+        match self {
+            Self::Small => 20.0,
+            Self::Medium => 28.0,
+            Self::Large => 36.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ToastPlacement {
     TopStart,
+    #[default]
     Top,
     TopEnd,
     BottomStart,
-    #[default]
     Bottom,
     BottomEnd,
 }
@@ -1067,6 +2505,219 @@ where
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PaginationItem {
+    Page(usize),
+    Ellipsis,
+}
+
+fn pagination_items(current_page: usize, total_pages: usize) -> Vec<PaginationItem> {
+    let total_pages = total_pages.max(1);
+    let current_page = current_page.clamp(1, total_pages);
+
+    if total_pages <= 7 {
+        return (1..=total_pages).map(PaginationItem::Page).collect();
+    }
+
+    let mut items = vec![PaginationItem::Page(1)];
+    if current_page > 3 {
+        items.push(PaginationItem::Ellipsis);
+    }
+
+    let start = current_page.saturating_sub(1).max(2);
+    let end = current_page.saturating_add(1).min(total_pages - 1);
+    items.extend((start..=end).map(PaginationItem::Page));
+
+    if current_page < total_pages.saturating_sub(2) {
+        items.push(PaginationItem::Ellipsis);
+    }
+    items.push(PaginationItem::Page(total_pages));
+    items
+}
+
+fn pagination_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        let pressed = matches!(status, button::Status::Pressed);
+        let disabled = matches!(status, button::Status::Disabled);
+
+        button::Style {
+            background: active.then_some(Background::Color(BLUE_600)),
+            text_color: if active {
+                WHITE
+            } else if disabled {
+                INK_SUBTLE
+            } else if hovered || pressed {
+                BLUE_700
+            } else {
+                INK_MUTED
+            },
+            border: Border {
+                color: if active || pressed {
+                    BLUE_600
+                } else if disabled {
+                    Color::from_rgba(LINE.r, LINE.g, LINE.b, 0.55)
+                } else if hovered {
+                    BLUE_500
+                } else {
+                    LINE
+                },
+                width: 1.0,
+                radius: RADIUS_FIELD.into(),
+            },
+            ..button::Style::default()
+        }
+    }
+}
+
+fn pagination_button<'a, Message>(
+    content: impl Into<Element<'a, Message>>,
+    active: bool,
+    on_press: Option<Message>,
+    width: f32,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let control = button(
+        container(content)
+            .width(Fill)
+            .height(Fill)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center),
+    )
+    .width(width)
+    .height(PAGINATION_ITEM_SIZE)
+    .padding(0)
+    .style(pagination_button_style(active));
+
+    match on_press {
+        Some(message) => control.on_press(message).into(),
+        None => control.into(),
+    }
+}
+
+/// 创建可独立组合的分页页码链接。
+pub fn pagination_link<'a, Message>(
+    page: usize,
+    active: bool,
+    on_press: Option<Message>,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    pagination_button(
+        text(page.to_string())
+            .size(12)
+            .font(crate::fonts::MEDIUM)
+            .line_height(iced::widget::text::LineHeight::Absolute(Pixels(18.0))),
+        active,
+        on_press,
+        PAGINATION_ITEM_SIZE,
+    )
+}
+
+fn pagination_navigation<'a, Message>(
+    label: &'a str,
+    icon: LucideIcon,
+    icon_first: bool,
+    on_press: Option<Message>,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let icon_color = if on_press.is_some() {
+        INK_MUTED
+    } else {
+        INK_SUBTLE
+    };
+    let label = text(label)
+        .size(12)
+        .font(crate::fonts::MEDIUM)
+        .line_height(iced::widget::text::LineHeight::Absolute(Pixels(18.0)));
+    let content = if icon_first {
+        row![crate::icons::icon(icon, 15, icon_color), label]
+    } else {
+        row![label, crate::icons::icon(icon, 15, icon_color)]
+    }
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
+
+    pagination_button(content, false, on_press, PAGINATION_NAV_WIDTH)
+}
+
+/// 创建分页的上一页按钮；传入 `None` 时按钮为禁用状态。
+pub fn pagination_previous<'a, Message>(on_press: Option<Message>) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    pagination_navigation("Previous", LucideIcon::ChevronLeft, true, on_press)
+}
+
+/// 创建分页的下一页按钮；传入 `None` 时按钮为禁用状态。
+pub fn pagination_next<'a, Message>(on_press: Option<Message>) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    pagination_navigation("Next", LucideIcon::ChevronRight, false, on_press)
+}
+
+/// 创建不参与交互的分页省略号。
+pub fn pagination_ellipsis<'a, Message>() -> Element<'a, Message>
+where
+    Message: 'a,
+{
+    container(crate::icons::icon(LucideIcon::Ellipsis, 16, INK_SUBTLE))
+        .width(PAGINATION_ITEM_SIZE)
+        .height(PAGINATION_ITEM_SIZE)
+        .align_x(iced::Alignment::Center)
+        .align_y(iced::Alignment::Center)
+        .into()
+}
+
+/// 将自定义分页项组合为一行分页内容。
+pub fn pagination_content<'a, Message>(items: Vec<Element<'a, Message>>) -> Element<'a, Message>
+where
+    Message: 'a,
+{
+    row(items)
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
+        .into()
+}
+
+/// 创建包含上一页、页码、省略号和下一页的受控分页组件。
+pub fn pagination<'a, Message>(
+    current_page: usize,
+    total_pages: usize,
+    on_change: impl Fn(usize) -> Message + Clone + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let total_pages = total_pages.max(1);
+    let current_page = current_page.clamp(1, total_pages);
+    let mut items = vec![pagination_previous(
+        (current_page > 1).then(|| on_change.clone()(current_page - 1)),
+    )];
+
+    for item in pagination_items(current_page, total_pages) {
+        items.push(match item {
+            PaginationItem::Page(page) => pagination_link(
+                page,
+                page == current_page,
+                (page != current_page).then(|| on_change.clone()(page)),
+            ),
+            PaginationItem::Ellipsis => pagination_ellipsis(),
+        });
+    }
+
+    items.push(pagination_next(
+        (current_page < total_pages).then(|| on_change(total_pages.min(current_page + 1))),
+    ));
+    pagination_content(items)
+}
+
 fn toolbar_surface(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SURFACE)),
@@ -1521,6 +3172,7 @@ pub fn button_style_animated(
         let disabled = matches!(status, button::Status::Disabled);
         let interactive = hovered || pressed;
         let press_mix = press_progress.max(if pressed { 0.75 } else { 0.0 });
+        let outlined = matches!(variant, ButtonVariant::Outline);
         let default_hover = Color::from_rgb8(225, 225, 226);
         let on_surface_hover = Color::from_rgb8(239, 239, 240);
         let (background, text_color) = match variant {
@@ -1587,8 +3239,19 @@ pub fn button_style_animated(
                 text_color
             },
             border: Border {
+                color: if !outlined {
+                    Color::TRANSPARENT
+                } else if disabled {
+                    Color::from_rgba(LINE.r, LINE.g, LINE.b, 0.55)
+                } else if press_mix > 0.0 {
+                    BLUE_600
+                } else if hovered {
+                    BLUE_500
+                } else {
+                    LINE
+                },
+                width: if outlined { 1.0 } else { 0.0 },
                 radius: RADIUS_CONTROL.into(),
-                ..Border::default()
             },
             shadow: Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.08 * press_mix),
@@ -2521,18 +4184,30 @@ fn checkbox_style_with_progress(
     status: checkbox::Status,
     transition_progress: f32,
 ) -> checkbox::Style {
-    let (_checked, disabled) = match status {
-        checkbox::Status::Active { is_checked } | checkbox::Status::Hovered { is_checked } => {
-            (is_checked, false)
-        }
-        checkbox::Status::Disabled { is_checked } => (is_checked, true),
+    let (hovered, disabled) = match status {
+        checkbox::Status::Active { .. } => (false, false),
+        checkbox::Status::Hovered { .. } => (true, false),
+        checkbox::Status::Disabled { .. } => (false, true),
+    };
+    let idle_border = if hovered { BLUE_500 } else { LINE };
+    let border_color = if transition_progress <= 0.0 {
+        idle_border
+    } else if transition_progress >= 1.0 {
+        BLUE_600
+    } else {
+        mix_color(idle_border, BLUE_600, transition_progress)
     };
     checkbox::Style {
         background: Background::Color(mix_color(SURFACE, BLUE_600, transition_progress)),
         icon_color: mix_color(INK, WHITE, transition_progress),
         border: Border {
+            color: if disabled {
+                Color::from_rgba(border_color.r, border_color.g, border_color.b, 0.55)
+            } else {
+                border_color
+            },
+            width: 1.0,
             radius: 4.0.into(),
-            ..Border::default()
         },
         text_color: Some(if disabled { INK_SUBTLE } else { INK }),
     }
@@ -2558,12 +4233,22 @@ where
         .into()
 }
 
-pub fn radio_style(_theme: &Theme, _status: iced_radio::Status) -> iced_radio::Style {
+pub fn radio_style(_theme: &Theme, status: iced_radio::Status) -> iced_radio::Style {
+    let (selected, hovered) = match status {
+        iced_radio::Status::Active { is_selected } => (is_selected, false),
+        iced_radio::Status::Hovered { is_selected } => (is_selected, true),
+    };
     iced_radio::Style {
         background: Background::Color(SURFACE),
         dot_color: BLUE_600,
-        border_width: 0.0,
-        border_color: Color::TRANSPARENT,
+        border_width: 1.0,
+        border_color: if selected {
+            BLUE_600
+        } else if hovered {
+            BLUE_500
+        } else {
+            LINE
+        },
         text_color: Some(INK),
     }
 }
@@ -2826,14 +4511,402 @@ where
     }
 }
 
-pub fn progress_style(_theme: &Theme) -> progress_bar::Style {
-    progress_bar::Style {
-        background: Background::Color(SURFACE_ALT),
-        bar: Background::Color(BLUE_600),
-        border: Border {
-            radius: RADIUS_FIELD.into(),
-            ..Border::default()
-        },
+fn progress_fraction(value: f32, min_value: f32, max_value: f32) -> f32 {
+    if !value.is_finite()
+        || !min_value.is_finite()
+        || !max_value.is_finite()
+        || min_value >= max_value
+    {
+        0.0
+    } else {
+        ((value - min_value) / (max_value - min_value)).clamp(0.0, 1.0)
+    }
+}
+
+fn indeterminate_segment(track_width: f32, phase: f32) -> (f32, f32) {
+    let segment_width = track_width.max(0.0) * 0.4;
+    let phase = if phase.is_finite() {
+        phase.rem_euclid(1.0)
+    } else {
+        0.0
+    };
+    let eased = phase * phase * (3.0 - 2.0 * phase);
+    (segment_width * (-1.0 + 4.5 * eased), segment_width)
+}
+
+/// HeroUI 风格的确定或不确定进度条。
+#[derive(Debug, Clone)]
+pub struct ProgressBar {
+    value: f32,
+    min_value: f32,
+    max_value: f32,
+    label: Option<String>,
+    value_label: Option<String>,
+    show_value: bool,
+    is_indeterminate: bool,
+    animation_phase: f32,
+    color: ProgressBarColor,
+    size: ProgressBarSize,
+    width: Length,
+}
+
+impl ProgressBar {
+    pub fn new(value: f32) -> Self {
+        Self {
+            value,
+            min_value: 0.0,
+            max_value: 100.0,
+            label: None,
+            value_label: None,
+            show_value: true,
+            is_indeterminate: false,
+            animation_phase: 0.0,
+            color: ProgressBarColor::default(),
+            size: ProgressBarSize::default(),
+            width: Length::Fill,
+        }
+    }
+
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn value_label(mut self, label: impl Into<String>) -> Self {
+        self.value_label = Some(label.into());
+        self
+    }
+
+    pub fn show_value(mut self, show_value: bool) -> Self {
+        self.show_value = show_value;
+        self
+    }
+
+    pub fn range(mut self, range: std::ops::RangeInclusive<f32>) -> Self {
+        (self.min_value, self.max_value) = range.into_inner();
+        self
+    }
+
+    pub fn is_indeterminate(mut self, is_indeterminate: bool) -> Self {
+        self.is_indeterminate = is_indeterminate;
+        self
+    }
+
+    pub fn animation_phase(mut self, animation_phase: f32) -> Self {
+        self.animation_phase = animation_phase;
+        self
+    }
+
+    pub fn color(mut self, color: ProgressBarColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub fn size(mut self, size: ProgressBarSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
+        self
+    }
+
+    fn fraction(&self) -> f32 {
+        progress_fraction(self.value, self.min_value, self.max_value)
+    }
+
+    fn formatted_value(&self) -> String {
+        self.value_label
+            .clone()
+            .unwrap_or_else(|| format!("{:.0}%", self.fraction() * 100.0))
+    }
+}
+
+struct ProgressBarTrack {
+    fraction: f32,
+    is_indeterminate: bool,
+    animation_phase: f32,
+    fill: Color,
+    girth: f32,
+    width: Length,
+}
+
+impl<Message> Widget<Message, Theme, iced::Renderer> for ProgressBarTrack {
+    fn size(&self) -> Size<Length> {
+        Size::new(self.width, Length::Fixed(self.girth))
+    }
+
+    fn layout(
+        &mut self,
+        _tree: &mut Tree,
+        _renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        layout::atomic(limits, self.width, Length::Fixed(self.girth))
+    }
+
+    fn draw(
+        &self,
+        _tree: &Tree,
+        renderer: &mut iced::Renderer,
+        _theme: &Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        let radius = (bounds.height / 2.0).into();
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                border: Border {
+                    radius,
+                    ..Border::default()
+                },
+                ..renderer::Quad::default()
+            },
+            Background::Color(LINE),
+        );
+
+        let fill_bounds = if self.is_indeterminate {
+            let (offset, width) = indeterminate_segment(bounds.width, self.animation_phase);
+            Rectangle {
+                x: bounds.x + offset,
+                width,
+                ..bounds
+            }
+        } else {
+            Rectangle {
+                width: bounds.width * self.fraction.clamp(0.0, 1.0),
+                ..bounds
+            }
+        };
+
+        if fill_bounds.width > 0.0 {
+            renderer.with_layer(bounds, |renderer| {
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: fill_bounds,
+                        border: Border {
+                            radius,
+                            ..Border::default()
+                        },
+                        ..renderer::Quad::default()
+                    },
+                    Background::Color(self.fill),
+                );
+            });
+        }
+    }
+}
+
+impl<'a, Message> From<ProgressBar> for Element<'a, Message>
+where
+    Message: 'a,
+{
+    fn from(progress: ProgressBar) -> Self {
+        let fraction = progress.fraction();
+        let output = progress.formatted_value();
+        let track: Element<'a, Message> = Element::new(ProgressBarTrack {
+            fraction,
+            is_indeterminate: progress.is_indeterminate,
+            animation_phase: progress.animation_phase,
+            fill: progress.color.fill(),
+            girth: progress.size.girth(),
+            width: progress.width,
+        });
+        let mut content = column![].spacing(4).width(progress.width);
+
+        if let Some(label) = progress.label {
+            let mut header = row![text(label).size(12).font(crate::fonts::MEDIUM).color(INK)]
+                .width(Fill)
+                .align_y(iced::Alignment::Center);
+            if progress.show_value && !progress.is_indeterminate {
+                header = header.push(space::horizontal()).push(
+                    text(output)
+                        .size(12)
+                        .font(crate::fonts::MEDIUM)
+                        .color(INK_MUTED),
+                );
+            }
+            content = content.push(header);
+        }
+
+        content.push(track).into()
+    }
+}
+
+fn progress_circle_arc(fraction: f32, is_indeterminate: bool, animation_phase: f32) -> (f32, f32) {
+    let phase = if animation_phase.is_finite() {
+        animation_phase.rem_euclid(1.0)
+    } else {
+        0.0
+    };
+    let start = -std::f32::consts::FRAC_PI_2
+        + if is_indeterminate {
+            phase * std::f32::consts::TAU
+        } else {
+            0.0
+        };
+    let sweep = if is_indeterminate {
+        std::f32::consts::TAU * 0.25
+    } else {
+        std::f32::consts::TAU * fraction.clamp(0.0, 1.0)
+    };
+    (start, sweep)
+}
+
+/// HeroUI 风格的确定或不确定环形进度指示器。
+#[derive(Debug, Clone)]
+pub struct ProgressCircle {
+    value: f32,
+    min_value: f32,
+    max_value: f32,
+    label: Option<String>,
+    is_indeterminate: bool,
+    animation_phase: f32,
+    color: ProgressCircleColor,
+    size: ProgressCircleSize,
+}
+
+impl ProgressCircle {
+    pub fn new(value: f32) -> Self {
+        Self {
+            value,
+            min_value: 0.0,
+            max_value: 100.0,
+            label: None,
+            is_indeterminate: false,
+            animation_phase: 0.0,
+            color: ProgressCircleColor::default(),
+            size: ProgressCircleSize::default(),
+        }
+    }
+
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn range(mut self, range: std::ops::RangeInclusive<f32>) -> Self {
+        (self.min_value, self.max_value) = range.into_inner();
+        self
+    }
+
+    pub fn is_indeterminate(mut self, is_indeterminate: bool) -> Self {
+        self.is_indeterminate = is_indeterminate;
+        self
+    }
+
+    pub fn animation_phase(mut self, animation_phase: f32) -> Self {
+        self.animation_phase = animation_phase;
+        self
+    }
+
+    pub fn color(mut self, color: ProgressCircleColor) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub fn size(mut self, size: ProgressCircleSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    fn fraction(&self) -> f32 {
+        progress_fraction(self.value, self.min_value, self.max_value)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProgressCircleCanvas {
+    fraction: f32,
+    is_indeterminate: bool,
+    animation_phase: f32,
+    fill: Color,
+}
+
+impl<Message> iced_canvas::Program<Message> for ProgressCircleCanvas {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<iced_canvas::Geometry> {
+        let mut frame = iced_canvas::Frame::new(renderer, bounds.size());
+        let diameter = bounds.width.min(bounds.height);
+        let stroke_width = diameter * (4.0 / 36.0);
+        let radius = diameter * (16.0 / 36.0);
+        let center = frame.center();
+        let track = iced_canvas::Path::circle(center, radius);
+        frame.stroke(
+            &track,
+            iced_canvas::Stroke::default()
+                .with_color(LINE)
+                .with_width(stroke_width),
+        );
+
+        let (start, sweep) =
+            progress_circle_arc(self.fraction, self.is_indeterminate, self.animation_phase);
+        if sweep > 0.0 {
+            let fill = if !self.is_indeterminate && self.fraction >= 1.0 {
+                iced_canvas::Path::circle(center, radius)
+            } else {
+                iced_canvas::Path::new(|builder| {
+                    builder.arc(iced_canvas::path::Arc {
+                        center,
+                        radius,
+                        start_angle: Radians(start),
+                        end_angle: Radians(start + sweep),
+                    });
+                })
+            };
+            frame.stroke(
+                &fill,
+                iced_canvas::Stroke::default()
+                    .with_color(self.fill)
+                    .with_width(stroke_width)
+                    .with_line_cap(iced_canvas::LineCap::Round),
+            );
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+impl<'a, Message> From<ProgressCircle> for Element<'a, Message>
+where
+    Message: 'a,
+{
+    fn from(progress: ProgressCircle) -> Self {
+        let diameter = progress.size.diameter();
+        let circle: Element<'a, Message> = iced_canvas(ProgressCircleCanvas {
+            fraction: progress.fraction(),
+            is_indeterminate: progress.is_indeterminate,
+            animation_phase: progress.animation_phase,
+            fill: progress.color.fill(),
+        })
+        .width(diameter)
+        .height(diameter)
+        .into();
+
+        if let Some(label) = progress.label {
+            row![
+                circle,
+                text(label).size(12).font(crate::fonts::MEDIUM).color(INK)
+            ]
+            .spacing(10)
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            circle
+        }
     }
 }
 
@@ -3864,10 +5937,17 @@ pub fn tab_animated(
 mod tests {
     use super::{
         BadgePosition, CardVariant, GlobalLayer, GlobalModalOptions, HeroSlider, INK, NAVY_950,
-        PopupPlacement, SLIDER_HANDLE_RADIUS, SLIDER_HEIGHT, SLIDER_WIDTH, SUCCESS, SWITCH_PADDING,
-        SWITCH_THUMB_SIZE, SWITCH_WIDTH, ToastPlacement, WHITE, badge_offset,
-        next_navigation_index, popup_origin, previous_navigation_index, readable_on,
-        switch_thumb_offset, translated_popup_placement,
+        PaginationItem, PopupPlacement, ProgressBar, ProgressBarColor, ProgressBarSize,
+        ProgressCircle, ProgressCircleColor, ProgressCircleSize, SLIDER_HANDLE_RADIUS,
+        SLIDER_HEIGHT, SLIDER_WIDTH, SUCCESS, SWITCH_PADDING, SWITCH_THUMB_SIZE, SWITCH_WIDTH,
+        ScrollMetrics, ScrollShadowEdges, ScrollShadowOrientation, SelectableTypography,
+        SelectableTypographyState, Separator, SeparatorOrientation, SeparatorVariant,
+        ToastPlacement, Typography, TypographyType, TypographyWeight, WHITE,
+        automatic_scroll_shadow_edges, badge_offset, indeterminate_segment, next_navigation_index,
+        pagination_items, popup_origin, previous_navigation_index, progress_circle_arc,
+        progress_fraction, readable_on, switch_thumb_offset, translated_popup_placement,
+        translated_typography_context_position, typography_context_menu_text_layout,
+        typography_font,
     };
     use iced::{Point, Rectangle, Size, Vector};
 
@@ -3915,6 +5995,218 @@ mod tests {
     }
 
     #[test]
+    fn progress_bar_normalizes_custom_ranges_and_clamps_values() {
+        let progress = ProgressBar::new(750.0).range(0.0..=1000.0);
+
+        assert_eq!(progress.fraction(), 0.75);
+        assert_eq!(progress.formatted_value(), "75%");
+        assert_eq!(progress_fraction(-20.0, 0.0, 100.0), 0.0);
+        assert_eq!(progress_fraction(120.0, 0.0, 100.0), 1.0);
+        assert_eq!(progress_fraction(50.0, 100.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn progress_bar_variants_match_heroui_sizes_and_semantic_colors() {
+        assert_eq!(ProgressBarSize::Small.girth(), 4.0);
+        assert_eq!(ProgressBarSize::Medium.girth(), 8.0);
+        assert_eq!(ProgressBarSize::Large.girth(), 12.0);
+        assert_eq!(ProgressBarColor::Accent.fill(), super::BLUE_600);
+        assert_eq!(ProgressBarColor::Success.fill(), super::SUCCESS);
+        assert_eq!(ProgressBarColor::Warning.fill(), super::WARNING);
+        assert_eq!(ProgressBarColor::Danger.fill(), super::DANGER);
+    }
+
+    #[test]
+    fn indeterminate_progress_segment_moves_through_the_clipped_track() {
+        let (start, width) = indeterminate_segment(100.0, 0.0);
+        let (middle, middle_width) = indeterminate_segment(100.0, 0.5);
+        let (late, _) = indeterminate_segment(100.0, 0.9);
+
+        assert_eq!((start, width), (-40.0, 40.0));
+        assert_eq!(middle_width, 40.0);
+        assert!(middle > 0.0);
+        assert!(late > 100.0);
+    }
+
+    #[test]
+    fn progress_circle_matches_heroui_sizes_colors_and_custom_ranges() {
+        let progress = ProgressCircle::new(750.0).range(0.0..=1000.0);
+
+        assert_eq!(progress.fraction(), 0.75);
+        assert_eq!(ProgressCircleSize::Small.diameter(), 20.0);
+        assert_eq!(ProgressCircleSize::Medium.diameter(), 28.0);
+        assert_eq!(ProgressCircleSize::Large.diameter(), 36.0);
+        assert_eq!(ProgressCircleColor::default(), ProgressCircleColor::Accent);
+    }
+
+    #[test]
+    fn progress_circle_uses_top_origin_and_a_quarter_indeterminate_arc() {
+        let (determinate_start, determinate_sweep) = progress_circle_arc(0.5, false, 0.0);
+        let (indeterminate_start, indeterminate_sweep) = progress_circle_arc(0.0, true, 0.25);
+
+        assert!((determinate_start + std::f32::consts::FRAC_PI_2).abs() < f32::EPSILON);
+        assert!((determinate_sweep - std::f32::consts::PI).abs() < f32::EPSILON);
+        assert!(indeterminate_start.abs() < f32::EPSILON);
+        assert!((indeterminate_sweep - std::f32::consts::FRAC_PI_2).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn separator_defaults_and_variants_match_heroui_geometry() {
+        let separator = Separator::new();
+
+        assert_eq!(separator.orientation, SeparatorOrientation::Horizontal);
+        assert_eq!(separator.variant, SeparatorVariant::Default);
+        assert_eq!(separator.thickness, 1.0);
+        assert_eq!(SeparatorVariant::Default.color(), super::LINE);
+        assert_ne!(
+            SeparatorVariant::Default.color(),
+            SeparatorVariant::Secondary.color()
+        );
+        assert_ne!(
+            SeparatorVariant::Secondary.color(),
+            SeparatorVariant::Tertiary.color()
+        );
+        assert_eq!(
+            Separator::new()
+                .orientation(SeparatorOrientation::Vertical)
+                .thickness(0.0)
+                .thickness,
+            1.0
+        );
+    }
+
+    #[test]
+    fn typography_scale_uses_heroui_sizes_and_local_fonts() {
+        let h1 = TypographyType::H1.metrics();
+        let body = TypographyType::Body.metrics();
+        let small = TypographyType::BodySmall.metrics();
+        let caption = TypographyType::BodyExtraSmall.metrics();
+        let code = TypographyType::Code.metrics();
+
+        assert_eq!((h1.size, h1.line_height), (36.0, 40.0));
+        assert_eq!((body.size, body.line_height), (16.0, 28.0));
+        assert_eq!((small.size, small.line_height), (14.0, 21.0));
+        assert_eq!((caption.size, caption.line_height), (12.0, 15.0));
+        assert_eq!((code.size, code.line_height), (14.0, 20.0));
+        assert_eq!(h1.font, crate::fonts::BOLD);
+        assert_eq!(body.font, crate::fonts::REGULAR);
+        assert_eq!(code.font, crate::fonts::MEDIUM);
+        assert_eq!(
+            typography_font(body.font, Some(TypographyWeight::Semibold)),
+            crate::fonts::BOLD
+        );
+    }
+
+    #[test]
+    fn typography_without_copy_feedback_keeps_the_original_message_api() {
+        struct NonCloneMessage;
+
+        let _: iced::Element<'_, NonCloneMessage> = Typography::new("Selectable text").into();
+    }
+
+    #[test]
+    fn typography_selection_preserves_utf8_boundaries_for_copying() {
+        let typography = SelectableTypography {
+            content: "A中文B".to_owned(),
+            metrics: TypographyType::Body.metrics(),
+            color: super::INK,
+            align: iced::advanced::text::Alignment::Left,
+            wrapping: iced::advanced::text::Wrapping::Word,
+            width: iced::Length::Shrink,
+            on_copy: None::<Box<dyn Fn()>>,
+        };
+        let mut state = SelectableTypographyState::default();
+
+        state.begin_selection(1);
+        assert!(state.extend_selection(7));
+        assert!(state.dragging);
+        assert_eq!(typography.selected_text(&state), Some("中文"));
+        state.begin_selection(7);
+        assert!(state.extend_selection(1));
+        assert_eq!(typography.selected_text(&state), Some("中文"));
+        assert_eq!(typography.char_boundary_at_or_before(2), 1);
+        assert_eq!(typography.char_boundary_at_or_before(6), 4);
+    }
+
+    #[test]
+    fn typography_selection_maps_logical_lines_to_full_text_offsets() {
+        let typography = SelectableTypography {
+            content: "第一行\nSecond line\n第三行".to_owned(),
+            metrics: TypographyType::Body.metrics(),
+            color: super::INK,
+            align: iced::advanced::text::Alignment::Left,
+            wrapping: iced::advanced::text::Wrapping::Word,
+            width: iced::Length::Fill,
+            on_copy: None::<Box<dyn Fn()>>,
+        };
+
+        assert_eq!(typography.logical_line_start(0), 0);
+        assert_eq!(typography.logical_line_start(1), "第一行\n".len());
+        assert_eq!(
+            typography.logical_line_start(2),
+            "第一行\nSecond line\n".len()
+        );
+    }
+
+    #[test]
+    fn typography_context_menu_position_accounts_for_scroll_translation() {
+        assert_eq!(
+            translated_typography_context_position(
+                Point::new(320.0, 740.0),
+                Vector::new(0.0, -500.0),
+            ),
+            Point::new(320.0, 240.0)
+        );
+        assert_eq!(
+            translated_typography_context_position(Point::new(18.0, 26.0), Vector::ZERO),
+            Point::new(18.0, 26.0)
+        );
+    }
+
+    #[test]
+    fn typography_context_menu_text_uses_the_vertical_center_anchor() {
+        let menu = Rectangle::new(Point::new(972.0, 303.0), Size::new(112.0, 36.0));
+        let (text_bounds, text_origin) = typography_context_menu_text_layout(menu);
+
+        assert_eq!(text_bounds, Size::new(88.0, 36.0));
+        assert_eq!(text_origin, Point::new(984.0, 321.0));
+    }
+
+    #[test]
+    fn scroll_shadow_visibility_tracks_start_middle_and_end_boundaries() {
+        let metrics = |translation_y| ScrollMetrics {
+            bounds: Rectangle::new(Point::ORIGIN, Size::new(200.0, 100.0)),
+            content_bounds: Rectangle::new(Point::ORIGIN, Size::new(200.0, 300.0)),
+            translation: Vector::new(0.0, translation_y),
+        };
+
+        assert_eq!(
+            automatic_scroll_shadow_edges(metrics(0.0), ScrollShadowOrientation::Vertical, 0.0,),
+            ScrollShadowEdges::After
+        );
+        assert_eq!(
+            automatic_scroll_shadow_edges(metrics(100.0), ScrollShadowOrientation::Vertical, 0.0,),
+            ScrollShadowEdges::Both
+        );
+        assert_eq!(
+            automatic_scroll_shadow_edges(metrics(200.0), ScrollShadowOrientation::Vertical, 0.0,),
+            ScrollShadowEdges::Before
+        );
+        assert_eq!(
+            automatic_scroll_shadow_edges(
+                ScrollMetrics {
+                    bounds: Rectangle::new(Point::ORIGIN, Size::new(200.0, 100.0)),
+                    content_bounds: Rectangle::new(Point::ORIGIN, Size::new(200.0, 100.0)),
+                    translation: Vector::ZERO,
+                },
+                ScrollShadowOrientation::Vertical,
+                0.0,
+            ),
+            ScrollShadowEdges::None
+        );
+    }
+
+    #[test]
     fn badge_positions_extend_from_each_anchor_corner() {
         assert_eq!(
             badge_offset(BadgePosition::TopRight, 20.0),
@@ -3941,41 +6233,72 @@ mod tests {
     }
 
     #[test]
-    fn non_field_interaction_styles_are_borderless() {
+    fn switch_hit_target_is_borderless() {
         let theme = super::app_theme();
 
-        assert_eq!(
-            super::button_style(super::ButtonVariant::Outline)(
-                &theme,
-                iced::widget::button::Status::Hovered,
-            )
-            .border
-            .width,
-            0.0
-        );
         assert_eq!(
             super::switch_button(&theme, iced::widget::button::Status::Hovered)
                 .border
                 .width,
             0.0
         );
+    }
+
+    #[test]
+    fn outline_button_keeps_a_visible_border_without_a_hover_fill() {
+        let theme = super::app_theme();
+        let active = super::button_style(super::ButtonVariant::Outline)(
+            &theme,
+            iced::widget::button::Status::Active,
+        );
+        let hovered = super::button_style(super::ButtonVariant::Outline)(
+            &theme,
+            iced::widget::button::Status::Hovered,
+        );
+        let primary = super::button_style(super::ButtonVariant::Primary)(
+            &theme,
+            iced::widget::button::Status::Active,
+        );
+
         assert_eq!(
-            super::checkbox_style(
-                &theme,
-                iced::widget::checkbox::Status::Hovered { is_checked: true },
-            )
-            .border
-            .width,
-            0.0
+            (active.border.color, active.border.width),
+            (super::LINE, 1.0)
         );
         assert_eq!(
-            super::radio_style(
-                &theme,
-                iced::widget::radio::Status::Hovered { is_selected: true },
-            )
-            .border_width,
-            0.0
+            (hovered.border.color, hovered.border.width),
+            (super::BLUE_500, 1.0)
         );
+        assert_eq!(hovered.background, None);
+        assert_eq!(primary.border.width, 0.0);
+    }
+
+    #[test]
+    fn selection_controls_keep_visible_stateful_borders() {
+        let theme = super::app_theme();
+        let checkbox = super::checkbox_style(
+            &theme,
+            iced::widget::checkbox::Status::Active { is_checked: false },
+        );
+        let checked_checkbox = super::checkbox_style(
+            &theme,
+            iced::widget::checkbox::Status::Active { is_checked: true },
+        );
+        let radio = super::radio_style(
+            &theme,
+            iced::widget::radio::Status::Active { is_selected: false },
+        );
+        let selected_radio = super::radio_style(
+            &theme,
+            iced::widget::radio::Status::Active { is_selected: true },
+        );
+
+        assert_eq!(
+            (checkbox.border.color, checkbox.border.width),
+            (super::LINE, 1.0)
+        );
+        assert_eq!(checked_checkbox.border.color, super::BLUE_600);
+        assert_eq!((radio.border_color, radio.border_width), (super::LINE, 1.0));
+        assert_eq!(selected_radio.border_color, super::BLUE_600);
     }
 
     #[test]
@@ -4153,7 +6476,7 @@ mod tests {
     #[test]
     fn card_and_toast_defaults_match_standard_usage() {
         assert_eq!(CardVariant::default(), CardVariant::Default);
-        assert_eq!(ToastPlacement::default(), ToastPlacement::Bottom);
+        assert_eq!(ToastPlacement::default(), ToastPlacement::Top);
         assert_eq!(
             ToastPlacement::TopEnd.alignment(),
             (iced::Alignment::End, iced::Alignment::Start)
@@ -4171,6 +6494,37 @@ mod tests {
         assert_eq!(next_navigation_index(3, 4), 0);
         assert_eq!(next_navigation_index(1, 4), 2);
         assert_eq!(next_navigation_index(0, 0), 0);
+    }
+
+    #[test]
+    fn pagination_items_follow_the_heroui_ellipsis_window() {
+        use PaginationItem::{Ellipsis, Page};
+
+        assert_eq!(pagination_items(0, 0), vec![Page(1)]);
+        assert_eq!(
+            pagination_items(1, 12),
+            vec![Page(1), Page(2), Ellipsis, Page(12)]
+        );
+        assert_eq!(
+            pagination_items(6, 12),
+            vec![
+                Page(1),
+                Ellipsis,
+                Page(5),
+                Page(6),
+                Page(7),
+                Ellipsis,
+                Page(12),
+            ]
+        );
+        assert_eq!(
+            pagination_items(12, 12),
+            vec![Page(1), Ellipsis, Page(11), Page(12)]
+        );
+        assert_eq!(
+            pagination_items(4, 7),
+            (1..=7).map(Page).collect::<Vec<_>>()
+        );
     }
 
     #[test]
