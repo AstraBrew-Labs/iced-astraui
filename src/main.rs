@@ -1,7 +1,7 @@
 mod app;
 mod fonts;
 mod icons;
-mod theme;
+pub mod ui;
 
 use iced::{Size, window};
 use lucide_icons::LUCIDE_FONT_BYTES;
@@ -13,6 +13,7 @@ fn main() -> iced::Result {
         app::Launcher::view,
     )
     .title(app::Launcher::title)
+    .subscription(app::Launcher::subscription)
     .theme(app::Launcher::theme)
     .font(LUCIDE_FONT_BYTES);
 
