@@ -47,6 +47,15 @@ pub(crate) enum ToastDemo {
     Interactive,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyboardScope {
+    StandaloneToggle,
+    TagGroup,
+    AlignmentGroup,
+    FormattingGroup,
+    Toolbar,
+}
+
 #[derive(Debug, Clone)]
 struct GlobalMessage {
     title: &'static str,
@@ -100,6 +109,11 @@ pub(crate) enum Message {
     ShowToast(ToastDemo),
     DismissToast(u64),
     ToastAction(u64),
+    ControlFocused(KeyboardScope, usize),
+    ControlActivated(KeyboardScope, usize),
+    RemoveTag(usize),
+    FocusNext,
+    FocusPrevious,
     OpenModal(ModalKind),
     CloseModal,
     ConfirmModal,
@@ -133,6 +147,16 @@ pub struct Launcher {
     toasts: Vec<ToastNotice>,
     toast_placement: ui::ToastPlacement,
     next_toast_id: u64,
+    keyboard_scope: Option<KeyboardScope>,
+    standalone_toggle: bool,
+    tag_labels: Vec<&'static str>,
+    tag_selected: Vec<bool>,
+    tag_focus: usize,
+    alignment: usize,
+    alignment_focus: usize,
+    formatting: [bool; 3],
+    formatting_focus: usize,
+    toolbar_focus: usize,
     modal: Option<ModalKind>,
     modal_input: String,
     motion: ui::MotionState,
@@ -147,6 +171,9 @@ impl Launcher {
             Self {
                 slider: 68.0,
                 disclosure_open: true,
+                tag_labels: vec!["Design", "Rust", "Desktop", "Accessible"],
+                tag_selected: vec![true, true, false, false],
+                alignment: 1,
                 motion,
                 ..Self::default()
             },
@@ -164,13 +191,32 @@ impl Launcher {
 
     pub fn subscription(&self) -> Subscription<Message> {
         let now = Instant::now();
-        if self.motion.needs_ticks(now) {
+        let timer = if self.motion.needs_ticks(now) {
             time::every(Duration::from_millis(16)).map(Message::Tick)
         } else if self.global_message.is_some() || !self.toasts.is_empty() {
             time::every(Duration::from_millis(100)).map(Message::Tick)
         } else {
             Subscription::none()
-        }
+        };
+        let keyboard = iced::event::listen_with(|event, status, _window| {
+            if status == iced::event::Status::Ignored
+                && let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab),
+                    modifiers,
+                    ..
+                }) = event
+            {
+                Some(if modifiers.shift() {
+                    Message::FocusPrevious
+                } else {
+                    Message::FocusNext
+                })
+            } else {
+                None
+            }
+        });
+
+        Subscription::batch([timer, keyboard])
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -256,6 +302,63 @@ impl Launcher {
                     None,
                     now,
                 );
+            }
+            Message::ControlFocused(scope, index) => {
+                self.keyboard_scope = Some(scope);
+                self.set_control_focus(scope, index);
+            }
+            Message::ControlActivated(scope, index) => {
+                self.keyboard_scope = Some(scope);
+                self.set_control_focus(scope, index);
+                match scope {
+                    KeyboardScope::StandaloneToggle => {
+                        self.standalone_toggle = !self.standalone_toggle;
+                    }
+                    KeyboardScope::TagGroup => {
+                        if let Some(selected) = self.tag_selected.get_mut(index) {
+                            *selected = !*selected;
+                        }
+                    }
+                    KeyboardScope::AlignmentGroup => self.alignment = index.min(2),
+                    KeyboardScope::FormattingGroup => {
+                        if let Some(selected) = self.formatting.get_mut(index) {
+                            *selected = !*selected;
+                        }
+                    }
+                    KeyboardScope::Toolbar => {
+                        if let Some(selected) = index
+                            .checked_sub(2)
+                            .and_then(|format_index| self.formatting.get_mut(format_index))
+                        {
+                            *selected = !*selected;
+                        } else {
+                            self.motion.press(
+                                if index == 0 {
+                                    "toolbar-undo"
+                                } else {
+                                    "toolbar-redo"
+                                },
+                                now,
+                            );
+                        }
+                    }
+                }
+            }
+            Message::RemoveTag(index) => {
+                if index < self.tag_labels.len() {
+                    self.tag_labels.remove(index);
+                    self.tag_selected.remove(index);
+                    self.tag_focus = self.tag_focus.min(self.tag_labels.len().saturating_sub(1));
+                    self.keyboard_scope = Some(KeyboardScope::TagGroup);
+                }
+            }
+            Message::FocusNext => {
+                self.keyboard_scope = None;
+                return iced::widget::operation::focus_next();
+            }
+            Message::FocusPrevious => {
+                self.keyboard_scope = None;
+                return iced::widget::operation::focus_previous();
             }
             Message::OpenModal(kind) => {
                 self.modal = Some(kind);
@@ -461,6 +564,18 @@ impl Launcher {
         });
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
+        }
+    }
+
+    fn set_control_focus(&mut self, scope: KeyboardScope, index: usize) {
+        match scope {
+            KeyboardScope::StandaloneToggle => {}
+            KeyboardScope::TagGroup => {
+                self.tag_focus = index.min(self.tag_labels.len().saturating_sub(1));
+            }
+            KeyboardScope::AlignmentGroup => self.alignment_focus = index.min(2),
+            KeyboardScope::FormattingGroup => self.formatting_focus = index.min(2),
+            KeyboardScope::Toolbar => self.toolbar_focus = index.min(4),
         }
     }
 
@@ -1173,6 +1288,7 @@ impl Launcher {
         );
 
         let card_and_toast = self.card_and_toast_showcase();
+        let selection_and_navigation = self.selection_and_navigation_showcase();
 
         column![
             header,
@@ -1180,6 +1296,7 @@ impl Launcher {
             fields,
             data_display,
             card_and_toast,
+            selection_and_navigation,
             feedback
         ]
         .spacing(22)
@@ -1370,6 +1487,234 @@ impl Launcher {
         .spacing(12)
         .width(Fill)
         .into()
+    }
+
+    fn selection_and_navigation_showcase(&self) -> Element<'_, Message> {
+        let tag_icons = [Icon::Palette, Icon::Code2, Icon::Monitor, Icon::Sparkles];
+        let tag_items = self
+            .tag_labels
+            .iter()
+            .enumerate()
+            .map(|(index, label)| {
+                ui::TagGroupItem::new(
+                    label,
+                    Some(tag_icons[index.min(tag_icons.len() - 1)]),
+                    self.tag_selected.get(index).copied().unwrap_or(false),
+                )
+                .removable(true)
+            })
+            .collect();
+        let tag_group = ui::tag_group(
+            iced::widget::Id::new("tag-group-demo"),
+            tag_items,
+            self.tag_focus,
+            self.keyboard_scope.is_none() || self.keyboard_scope == Some(KeyboardScope::TagGroup),
+            |index| Message::ControlFocused(KeyboardScope::TagGroup, index),
+            |index| Message::ControlActivated(KeyboardScope::TagGroup, index),
+            Message::RemoveTag,
+        );
+
+        let toggle_foreground = if self.standalone_toggle {
+            ui::WHITE
+        } else {
+            ui::INK_MUTED
+        };
+        let standalone_toggle = ui::toggle_button(
+            iced::widget::Id::new("toggle-button-demo"),
+            row![
+                icons::icon(Icon::Heart, 15, toggle_foreground),
+                text(if self.standalone_toggle {
+                    "Liked"
+                } else {
+                    "Like"
+                })
+                .size(11)
+                .font(fonts::MEDIUM),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+            self.standalone_toggle,
+            self.keyboard_scope.is_none()
+                || self.keyboard_scope == Some(KeyboardScope::StandaloneToggle),
+            Message::ControlFocused(KeyboardScope::StandaloneToggle, 0),
+            Message::ControlActivated(KeyboardScope::StandaloneToggle, 0),
+            ui::ToggleButtonVariant::Default,
+        );
+
+        let alignment_items = [
+            ("Left", Icon::AlignLeft),
+            ("Center", Icon::AlignCenter),
+            ("Right", Icon::AlignRight),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (label, icon))| {
+            ui::ToggleButtonGroupItem::new(Some(label), Some(icon), self.alignment == index)
+        })
+        .collect();
+        let alignment_group = ui::toggle_button_group(
+            iced::widget::Id::new("alignment-toggle-group"),
+            alignment_items,
+            self.alignment_focus,
+            self.keyboard_scope.is_none()
+                || self.keyboard_scope == Some(KeyboardScope::AlignmentGroup),
+            ui::SelectionMode::Single,
+            ui::Orientation::Horizontal,
+            false,
+            |index| Message::ControlFocused(KeyboardScope::AlignmentGroup, index),
+            |index| Message::ControlActivated(KeyboardScope::AlignmentGroup, index),
+        );
+
+        let formatting_items = [Icon::Bold, Icon::Italic, Icon::Underline]
+            .into_iter()
+            .enumerate()
+            .map(|(index, icon)| {
+                ui::ToggleButtonGroupItem::new(None, Some(icon), self.formatting[index])
+            })
+            .collect();
+        let formatting_group = ui::toggle_button_group(
+            iced::widget::Id::new("formatting-toggle-group"),
+            formatting_items,
+            self.formatting_focus,
+            self.keyboard_scope.is_none()
+                || self.keyboard_scope == Some(KeyboardScope::FormattingGroup),
+            ui::SelectionMode::Multiple,
+            ui::Orientation::Horizontal,
+            true,
+            |index| Message::ControlFocused(KeyboardScope::FormattingGroup, index),
+            |index| Message::ControlActivated(KeyboardScope::FormattingGroup, index),
+        );
+
+        let toolbar_icons = [
+            Icon::Undo2,
+            Icon::Redo2,
+            Icon::Bold,
+            Icon::Italic,
+            Icon::Underline,
+        ];
+        let toolbar_items = toolbar_icons
+            .into_iter()
+            .enumerate()
+            .map(|(index, icon)| {
+                let selected = index
+                    .checked_sub(2)
+                    .and_then(|format_index| self.formatting.get(format_index))
+                    .copied()
+                    .unwrap_or(false);
+                button(
+                    container(icons::icon(
+                        icon,
+                        15,
+                        if selected { ui::WHITE } else { ui::INK_MUTED },
+                    ))
+                    .width(Fill)
+                    .height(Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::ControlActivated(KeyboardScope::Toolbar, index))
+                .width(34)
+                .height(34)
+                .padding(0)
+                .style(ui::button_style(if selected {
+                    ui::ButtonVariant::Primary
+                } else {
+                    ui::ButtonVariant::Ghost
+                }))
+                .into()
+            })
+            .collect();
+        let toolbar = ui::toolbar(
+            iced::widget::Id::new("toolbar-demo"),
+            toolbar_items,
+            self.toolbar_focus,
+            self.keyboard_scope.is_none() || self.keyboard_scope == Some(KeyboardScope::Toolbar),
+            ui::Orientation::Horizontal,
+            true,
+            |index| Message::ControlFocused(KeyboardScope::Toolbar, index),
+            |index| Message::ControlActivated(KeyboardScope::Toolbar, index),
+        );
+
+        let tooltip_enabled =
+            self.modal.is_none() && self.global_message.is_none() && self.toasts.is_empty();
+        let tooltip = ui::tooltip(
+            iced::widget::Id::new("tooltip-demo"),
+            button(
+                container(icons::icon(Icon::Info, 15, ui::BLUE_600))
+                    .width(Fill)
+                    .height(Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::Noop)
+            .width(34)
+            .height(34)
+            .padding(0)
+            .style(ui::button_style(ui::ButtonVariant::Secondary)),
+            "Hover or focus for component details",
+            ui::TooltipPlacement::Top,
+            tooltip_enabled,
+        );
+
+        self.component_card(
+            "Selection & navigation",
+            "Focusable collections and tool controls share consistent keyboard behavior.",
+            column![
+                row![
+                    column![
+                        text("TagGroup")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        tag_group,
+                    ]
+                    .spacing(8)
+                    .width(Fill),
+                    column![
+                        text("ToggleButton & Tooltip")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        row![standalone_toggle, tooltip]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                    ]
+                    .spacing(8),
+                ]
+                .spacing(18)
+                .align_y(Alignment::Start),
+                row![
+                    column![
+                        text("Single selection")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        alignment_group,
+                    ]
+                    .spacing(8),
+                    column![
+                        text("Multiple selection")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        formatting_group,
+                    ]
+                    .spacing(8),
+                    space::horizontal(),
+                    column![
+                        text("Toolbar")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        toolbar,
+                    ]
+                    .spacing(8),
+                ]
+                .spacing(18)
+                .align_y(Alignment::Start),
+            ]
+            .spacing(16),
+        )
     }
 
     fn component_card<'a>(
@@ -1636,7 +1981,7 @@ impl Launcher {
 
 #[cfg(test)]
 mod tests {
-    use super::{DropdownAction, Launcher, Message, ModalKind, Page, ToastDemo};
+    use super::{DropdownAction, KeyboardScope, Launcher, Message, ModalKind, Page, ToastDemo};
     use crate::ui;
     use iced::{Point, time::Duration};
 
@@ -1777,6 +2122,36 @@ mod tests {
             .unwrap();
         let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(1)));
         assert!(launcher.toasts.is_empty());
+    }
+
+    #[test]
+    fn keyboard_collections_select_toggle_and_remove_items() {
+        let (mut launcher, _) = Launcher::new();
+
+        let _ = launcher.update(Message::ControlActivated(
+            KeyboardScope::StandaloneToggle,
+            0,
+        ));
+        assert!(launcher.standalone_toggle);
+
+        let _ = launcher.update(Message::ControlFocused(KeyboardScope::TagGroup, 2));
+        let _ = launcher.update(Message::ControlActivated(KeyboardScope::TagGroup, 2));
+        assert_eq!(launcher.tag_focus, 2);
+        assert!(launcher.tag_selected[2]);
+
+        let _ = launcher.update(Message::ControlActivated(KeyboardScope::AlignmentGroup, 2));
+        assert_eq!(launcher.alignment, 2);
+
+        let _ = launcher.update(Message::ControlActivated(KeyboardScope::FormattingGroup, 1));
+        assert!(launcher.formatting[1]);
+
+        let original_len = launcher.tag_labels.len();
+        let _ = launcher.update(Message::RemoveTag(2));
+        assert_eq!(launcher.tag_labels.len(), original_len - 1);
+        assert_eq!(launcher.tag_selected.len(), launcher.tag_labels.len());
+
+        let _ = launcher.update(Message::FocusNext);
+        assert_eq!(launcher.keyboard_scope, None);
     }
 
     #[test]

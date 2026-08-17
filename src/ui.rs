@@ -308,11 +308,6 @@ pub fn sidebar(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SURFACE)),
         text_color: Some(INK),
-        border: Border {
-            color: LINE,
-            width: 1.0,
-            ..Border::default()
-        },
         ..container::Style::default()
     }
 }
@@ -330,50 +325,28 @@ pub fn card(_theme: &Theme) -> container::Style {
 
 fn card_variant_style(variant: CardVariant) -> impl Fn(&Theme) -> container::Style {
     move |_theme| {
-        let (background, border, shadow) = match variant {
-            CardVariant::Transparent => (None, Border::default(), Shadow::default()),
+        let (background, shadow) = match variant {
+            CardVariant::Transparent => (None, Shadow::default()),
             CardVariant::Default => (
                 Some(Background::Color(SURFACE)),
-                Border {
-                    color: LINE,
-                    width: 1.0,
-                    radius: RADIUS_PANEL.into(),
-                },
                 Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.07),
                     offset: Vector::new(0.0, 2.0),
                     blur_radius: 10.0,
                 },
             ),
-            CardVariant::Secondary => (
-                Some(Background::Color(SURFACE_ALT)),
-                Border {
-                    color: Color::from_rgba(LINE.r, LINE.g, LINE.b, 0.72),
-                    width: 1.0,
-                    radius: RADIUS_PANEL.into(),
-                },
-                Shadow::default(),
-            ),
+            CardVariant::Secondary => (Some(Background::Color(SURFACE_ALT)), Shadow::default()),
             CardVariant::Tertiary => (
                 Some(Background::Color(Color::from_rgb8(226, 240, 253))),
-                Border {
-                    color: Color::from_rgba(BLUE_600.r, BLUE_600.g, BLUE_600.b, 0.18),
-                    width: 1.0,
-                    radius: RADIUS_PANEL.into(),
-                },
                 Shadow::default(),
             ),
         };
 
         container::Style {
             background,
-            border: if matches!(variant, CardVariant::Transparent) {
-                border
-            } else {
-                Border {
-                    radius: RADIUS_PANEL.into(),
-                    ..border
-                }
+            border: Border {
+                radius: RADIUS_PANEL.into(),
+                ..Border::default()
             },
             shadow,
             text_color: Some(INK),
@@ -462,6 +435,1009 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionMode {
+    Single,
+    Multiple,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Orientation {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToggleButtonVariant {
+    Default,
+    Ghost,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupPosition {
+    Standalone,
+    First,
+    Middle,
+    Last,
+}
+
+fn previous_navigation_index(current: usize, count: usize) -> usize {
+    if count == 0 {
+        0
+    } else if current == 0 {
+        count - 1
+    } else {
+        current - 1
+    }
+}
+
+fn next_navigation_index(current: usize, count: usize) -> usize {
+    if count == 0 { 0 } else { (current + 1) % count }
+}
+
+#[derive(Debug, Default)]
+struct NavigationState {
+    focused: bool,
+}
+
+impl iced::advanced::widget::operation::Focusable for NavigationState {
+    fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    fn focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn unfocus(&mut self) {
+        self.focused = false;
+    }
+}
+
+struct NavigationGroup<'a, Message> {
+    content: Element<'a, Message>,
+    id: iced::widget::Id,
+    orientation: Orientation,
+    item_count: usize,
+    focused_index: usize,
+    on_focus: Box<dyn Fn(usize) -> Message + 'a>,
+    on_activate: Box<dyn Fn(usize) -> Message + 'a>,
+    on_remove: Option<Box<dyn Fn(usize) -> Message + 'a>>,
+}
+
+impl<Message> Widget<Message, Theme, iced::Renderer> for NavigationGroup<'_, Message>
+where
+    Message: Clone,
+{
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<NavigationState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(NavigationState::default())
+    }
+
+    fn children(&self) -> Vec<Tree> {
+        vec![Tree::new(&self.content)]
+    }
+
+    fn diff(&self, tree: &mut Tree) {
+        tree.diff_children(&[self.content.as_widget()]);
+    }
+
+    fn size(&self) -> Size<Length> {
+        self.content.as_widget().size()
+    }
+
+    fn size_hint(&self) -> Size<Length> {
+        self.content.as_widget().size_hint()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        self.content
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits)
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &iced::Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        let state = tree.state.downcast_mut::<NavigationState>();
+        operation.focusable(Some(&self.id), layout.bounds(), state);
+        self.content
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &iced::Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_mut::<NavigationState>();
+
+        if matches!(
+            event,
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                | Event::Touch(touch::Event::FingerPressed { .. })
+        ) {
+            let focused = cursor.is_over(layout.bounds());
+            if state.focused != focused {
+                state.focused = focused;
+                shell.request_redraw();
+            }
+        }
+
+        if state.focused
+            && self.item_count > 0
+            && let Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event
+        {
+            use keyboard::key::Named;
+
+            let previous_key = match self.orientation {
+                Orientation::Horizontal => Named::ArrowLeft,
+                Orientation::Vertical => Named::ArrowUp,
+            };
+            let next_key = match self.orientation {
+                Orientation::Horizontal => Named::ArrowRight,
+                Orientation::Vertical => Named::ArrowDown,
+            };
+            let message = match key.as_ref() {
+                keyboard::Key::Named(named) if named == previous_key => Some((self.on_focus)(
+                    previous_navigation_index(self.focused_index, self.item_count),
+                )),
+                keyboard::Key::Named(named) if named == next_key => Some((self.on_focus)(
+                    next_navigation_index(self.focused_index, self.item_count),
+                )),
+                keyboard::Key::Named(Named::Home) => Some((self.on_focus)(0)),
+                keyboard::Key::Named(Named::End) => Some((self.on_focus)(self.item_count - 1)),
+                keyboard::Key::Named(Named::Enter | Named::Space) => {
+                    Some((self.on_activate)(self.focused_index))
+                }
+                keyboard::Key::Named(Named::Backspace | Named::Delete) => self
+                    .on_remove
+                    .as_ref()
+                    .map(|on_remove| on_remove(self.focused_index)),
+                _ => None,
+            };
+
+            if let Some(message) = message {
+                shell.publish(message);
+                shell.capture_event();
+                return;
+            }
+        }
+
+        self.content.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut iced::Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        self.content.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut Tree,
+        layout: Layout<'a>,
+        renderer: &iced::Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'a, Message, Theme, iced::Renderer>> {
+        self.content.as_widget_mut().overlay(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            viewport,
+            translation,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn navigation_group<'a, Message>(
+    id: iced::widget::Id,
+    content: impl Into<Element<'a, Message>>,
+    orientation: Orientation,
+    item_count: usize,
+    focused_index: usize,
+    _active: bool,
+    on_focus: impl Fn(usize) -> Message + 'a,
+    on_activate: impl Fn(usize) -> Message + 'a,
+    on_remove: Option<impl Fn(usize) -> Message + 'a>,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    Element::new(NavigationGroup {
+        content: content.into(),
+        id,
+        orientation,
+        item_count,
+        focused_index: focused_index.min(item_count.saturating_sub(1)),
+        on_focus: Box::new(on_focus),
+        on_activate: Box::new(on_activate),
+        on_remove: on_remove.map(|on_remove| Box::new(on_remove) as Box<_>),
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct TagGroupItem<'a> {
+    pub label: &'a str,
+    pub icon: Option<LucideIcon>,
+    pub selected: bool,
+    pub removable: bool,
+}
+
+impl<'a> TagGroupItem<'a> {
+    pub const fn new(label: &'a str, icon: Option<LucideIcon>, selected: bool) -> Self {
+        Self {
+            label,
+            icon,
+            selected,
+            removable: false,
+        }
+    }
+
+    pub const fn removable(mut self, removable: bool) -> Self {
+        self.removable = removable;
+        self
+    }
+}
+
+fn tag_group_surface(selected: bool, _focused: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: Some(Background::Color(if selected {
+            Color::from_rgb8(220, 238, 255)
+        } else {
+            SURFACE
+        })),
+        border: Border {
+            radius: RADIUS_CONTROL.into(),
+            ..Border::default()
+        },
+        text_color: Some(if selected { BLUE_700 } else { INK }),
+        ..container::Style::default()
+    }
+}
+
+fn tag_group_button(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, _status| button::Style {
+        background: None,
+        text_color: if selected { BLUE_700 } else { INK },
+        border: Border {
+            radius: RADIUS_CONTROL.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn tag_group<'a, Message>(
+    id: iced::widget::Id,
+    items: Vec<TagGroupItem<'a>>,
+    focused_index: usize,
+    active: bool,
+    on_focus: impl Fn(usize) -> Message + 'a,
+    on_select: impl Fn(usize) -> Message + Clone + 'a,
+    on_remove: impl Fn(usize) -> Message + Clone + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let count = items.len();
+    let tags = items
+        .into_iter()
+        .enumerate()
+        .fold(row![].spacing(6), |tags, (index, item)| {
+            let foreground = if item.selected { BLUE_700 } else { INK };
+            let mut label = row![]
+                .height(Fill)
+                .spacing(5)
+                .align_y(iced::Alignment::Center);
+            if let Some(icon) = item.icon {
+                label = label.push(crate::icons::icon(icon, 13, foreground));
+            }
+            label = label.push(
+                text(item.label)
+                    .size(11)
+                    .font(crate::fonts::MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(Pixels(16.0))),
+            );
+
+            let mut content = row![
+                button(label)
+                    .on_press(on_select.clone()(index))
+                    .height(30)
+                    .padding([0, 10])
+                    .style(tag_group_button(item.selected)),
+            ]
+            .spacing(0)
+            .align_y(iced::Alignment::Center);
+
+            if item.removable {
+                content = content.push(
+                    button(centered_button_icon(LucideIcon::X, 12, foreground))
+                        .on_press(on_remove.clone()(index))
+                        .width(26)
+                        .height(30)
+                        .padding(0)
+                        .style(tag_group_button(item.selected)),
+                );
+            }
+
+            tags.push(container(content).style(tag_group_surface(
+                item.selected,
+                active && index == focused_index,
+            )))
+        })
+        .wrap();
+
+    navigation_group(
+        id,
+        tags,
+        Orientation::Horizontal,
+        count,
+        focused_index,
+        active,
+        on_focus,
+        on_select,
+        Some(on_remove),
+    )
+}
+
+fn toggle_button_style(
+    selected: bool,
+    variant: ToggleButtonVariant,
+    position: GroupPosition,
+    orientation: Orientation,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let pressed = matches!(status, button::Status::Pressed);
+        let radius = match (position, orientation) {
+            (GroupPosition::Standalone, _) => RADIUS_CONTROL.into(),
+            (GroupPosition::First, Orientation::Horizontal) => iced::border::left(RADIUS_FIELD),
+            (GroupPosition::First, Orientation::Vertical) => iced::border::top(RADIUS_FIELD),
+            (GroupPosition::Middle, _) => iced::border::Radius::default(),
+            (GroupPosition::Last, Orientation::Horizontal) => iced::border::right(RADIUS_FIELD),
+            (GroupPosition::Last, Orientation::Vertical) => iced::border::bottom(RADIUS_FIELD),
+        };
+        let background = if selected {
+            Some(Background::Color(BLUE_600))
+        } else if matches!(variant, ToggleButtonVariant::Default) {
+            Some(Background::Color(SURFACE))
+        } else {
+            None
+        };
+
+        button::Style {
+            background,
+            text_color: if selected { WHITE } else { INK_MUTED },
+            border: Border {
+                radius,
+                ..Border::default()
+            },
+            shadow: if pressed && matches!(position, GroupPosition::Standalone) {
+                Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.08),
+                    offset: Vector::new(0.0, 1.0),
+                    blur_radius: 2.0,
+                }
+            } else {
+                Shadow::default()
+            },
+            ..button::Style::default()
+        }
+    }
+}
+
+fn toggle_button_item<'a, Message>(
+    content: impl Into<Element<'a, Message>>,
+    selected: bool,
+    on_toggle: Message,
+    variant: ToggleButtonVariant,
+    position: GroupPosition,
+    orientation: Orientation,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    button(
+        container(content)
+            .height(Fill)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center),
+    )
+    .on_press(on_toggle)
+    .height(CONTROL_HEIGHT_MD)
+    .padding([0, 11])
+    .style(toggle_button_style(
+        selected,
+        variant,
+        position,
+        orientation,
+    ))
+    .into()
+}
+
+pub fn toggle_button<'a, Message>(
+    id: iced::widget::Id,
+    content: impl Into<Element<'a, Message>>,
+    selected: bool,
+    active: bool,
+    on_focus: Message,
+    on_toggle: Message,
+    variant: ToggleButtonVariant,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let control = toggle_button_item(
+        content,
+        selected,
+        on_toggle.clone(),
+        variant,
+        GroupPosition::Standalone,
+        Orientation::Horizontal,
+    );
+    navigation_group(
+        id,
+        control,
+        Orientation::Horizontal,
+        1,
+        0,
+        active,
+        move |_| on_focus.clone(),
+        move |_| on_toggle.clone(),
+        None::<fn(usize) -> Message>,
+    )
+}
+
+#[derive(Debug, Clone)]
+pub struct ToggleButtonGroupItem<'a> {
+    pub label: Option<&'a str>,
+    pub icon: Option<LucideIcon>,
+    pub selected: bool,
+}
+
+impl<'a> ToggleButtonGroupItem<'a> {
+    pub const fn new(label: Option<&'a str>, icon: Option<LucideIcon>, selected: bool) -> Self {
+        Self {
+            label,
+            icon,
+            selected,
+        }
+    }
+}
+
+fn toggle_button_content<'a, Message: 'a>(
+    item: &ToggleButtonGroupItem<'a>,
+) -> Element<'a, Message> {
+    let foreground = if item.selected { WHITE } else { INK_MUTED };
+    let mut content = row![].spacing(6).align_y(iced::Alignment::Center);
+    if let Some(icon) = item.icon {
+        content = content.push(crate::icons::icon(icon, 15, foreground));
+    }
+    if let Some(label) = item.label {
+        content = content.push(
+            text(label)
+                .size(11)
+                .font(crate::fonts::MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(Pixels(16.0))),
+        );
+    }
+    container(content)
+        .height(Fill)
+        .align_x(iced::Alignment::Center)
+        .align_y(iced::Alignment::Center)
+        .into()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn toggle_button_group<'a, Message>(
+    id: iced::widget::Id,
+    items: Vec<ToggleButtonGroupItem<'a>>,
+    focused_index: usize,
+    active: bool,
+    _selection_mode: SelectionMode,
+    orientation: Orientation,
+    detached: bool,
+    on_focus: impl Fn(usize) -> Message + 'a,
+    on_toggle: impl Fn(usize) -> Message + Clone + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let count = items.len();
+    let spacing = if detached { 4 } else { 0 };
+    let controls = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let position = if detached || count == 1 {
+                GroupPosition::Standalone
+            } else if index == 0 {
+                GroupPosition::First
+            } else if index + 1 == count {
+                GroupPosition::Last
+            } else {
+                GroupPosition::Middle
+            };
+            toggle_button_item(
+                toggle_button_content(item),
+                item.selected,
+                on_toggle.clone()(index),
+                ToggleButtonVariant::Default,
+                position,
+                orientation,
+            )
+        })
+        .collect::<Vec<_>>();
+    let content: Element<'a, Message> = match orientation {
+        Orientation::Horizontal => row(controls).spacing(spacing).into(),
+        Orientation::Vertical => column(controls).spacing(spacing).into(),
+    };
+
+    navigation_group(
+        id,
+        content,
+        orientation,
+        count,
+        focused_index,
+        active,
+        on_focus,
+        on_toggle,
+        None::<fn(usize) -> Message>,
+    )
+}
+
+fn toolbar_surface(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(SURFACE)),
+        border: Border {
+            radius: RADIUS_CONTROL.into(),
+            ..Border::default()
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.10),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 14.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn toolbar<'a, Message>(
+    id: iced::widget::Id,
+    items: Vec<Element<'a, Message>>,
+    focused_index: usize,
+    active: bool,
+    orientation: Orientation,
+    attached: bool,
+    on_focus: impl Fn(usize) -> Message + 'a,
+    on_activate: impl Fn(usize) -> Message + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let count = items.len();
+    let content: Element<'a, Message> = match orientation {
+        Orientation::Horizontal => row(items)
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        Orientation::Vertical => column(items).spacing(4).into(),
+    };
+    let content = if attached {
+        container(content).padding(4).style(toolbar_surface).into()
+    } else {
+        content
+    };
+
+    navigation_group(
+        id,
+        content,
+        orientation,
+        count,
+        focused_index,
+        active,
+        on_focus,
+        on_activate,
+        None::<fn(usize) -> Message>,
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TooltipPlacement {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Default)]
+struct TooltipState {
+    focused: bool,
+    hovered: bool,
+}
+
+impl iced::advanced::widget::operation::Focusable for TooltipState {
+    fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    fn focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn unfocus(&mut self) {
+        self.focused = false;
+    }
+}
+
+struct FocusableTooltip<'a, Message> {
+    trigger: Element<'a, Message>,
+    content: Element<'a, Message>,
+    id: iced::widget::Id,
+    placement: TooltipPlacement,
+    enabled: bool,
+}
+
+impl<Message> Widget<Message, Theme, iced::Renderer> for FocusableTooltip<'_, Message> {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<TooltipState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(TooltipState::default())
+    }
+
+    fn children(&self) -> Vec<Tree> {
+        vec![Tree::new(&self.trigger), Tree::new(&self.content)]
+    }
+
+    fn diff(&self, tree: &mut Tree) {
+        tree.diff_children(&[self.trigger.as_widget(), self.content.as_widget()]);
+    }
+
+    fn size(&self) -> Size<Length> {
+        self.trigger.as_widget().size()
+    }
+
+    fn size_hint(&self) -> Size<Length> {
+        self.trigger.as_widget().size_hint()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        self.trigger
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits)
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &iced::Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        let state = tree.state.downcast_mut::<TooltipState>();
+        operation.focusable(Some(&self.id), layout.bounds(), state);
+        self.trigger
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &iced::Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_mut::<TooltipState>();
+        let hovered = self.enabled && cursor.is_over(layout.bounds());
+        if state.hovered != hovered {
+            state.hovered = hovered;
+            shell.invalidate_layout();
+            shell.request_redraw();
+        }
+
+        if matches!(
+            event,
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                | Event::Touch(touch::Event::FingerPressed { .. })
+        ) {
+            let focused = self.enabled && cursor.is_over(layout.bounds());
+            if state.focused != focused {
+                state.focused = focused;
+                shell.invalidate_layout();
+                shell.request_redraw();
+            }
+        }
+
+        self.trigger.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut iced::Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        self.trigger.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        self.trigger.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut Tree,
+        layout: Layout<'a>,
+        renderer: &iced::Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'a, Message, Theme, iced::Renderer>> {
+        let mut children = tree.children.iter_mut();
+        let trigger_overlay = self.trigger.as_widget_mut().overlay(
+            children.next().unwrap(),
+            layout,
+            renderer,
+            viewport,
+            translation,
+        );
+        let state = tree.state.downcast_ref::<TooltipState>();
+        let tooltip_overlay = (self.enabled && (state.hovered || state.focused)).then(|| {
+            overlay::Element::new(Box::new(TooltipOverlay {
+                content: &mut self.content,
+                tree: children.next().unwrap(),
+                target: layout.bounds() + translation,
+                placement: self.placement,
+            }))
+        });
+
+        if trigger_overlay.is_some() || tooltip_overlay.is_some() {
+            Some(
+                overlay::Group::with_children(
+                    trigger_overlay.into_iter().chain(tooltip_overlay).collect(),
+                )
+                .overlay(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+struct TooltipOverlay<'a, 'b, Message> {
+    content: &'b mut Element<'a, Message>,
+    tree: &'b mut Tree,
+    target: Rectangle,
+    placement: TooltipPlacement,
+}
+
+impl<Message> overlay::Overlay<Message, Theme, iced::Renderer> for TooltipOverlay<'_, '_, Message> {
+    fn layout(&mut self, renderer: &iced::Renderer, bounds: Size) -> layout::Node {
+        let node = self.content.as_widget_mut().layout(
+            self.tree,
+            renderer,
+            &layout::Limits::new(Size::ZERO, bounds),
+        );
+        let size = node.size();
+        let gap = 8.0;
+        let origin = match self.placement {
+            TooltipPlacement::Top => Point::new(
+                self.target.center_x() - size.width / 2.0,
+                self.target.y - size.height - gap,
+            ),
+            TooltipPlacement::Bottom => Point::new(
+                self.target.center_x() - size.width / 2.0,
+                self.target.y + self.target.height + gap,
+            ),
+            TooltipPlacement::Left => Point::new(
+                self.target.x - size.width - gap,
+                self.target.center_y() - size.height / 2.0,
+            ),
+            TooltipPlacement::Right => Point::new(
+                self.target.x + self.target.width + gap,
+                self.target.center_y() - size.height / 2.0,
+            ),
+        };
+        let margin = 8.0;
+        node.move_to(Point::new(
+            origin
+                .x
+                .clamp(margin, (bounds.width - size.width - margin).max(margin)),
+            origin
+                .y
+                .clamp(margin, (bounds.height - size.height - margin).max(margin)),
+        ))
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut iced::Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+    ) {
+        self.content.as_widget().draw(
+            self.tree,
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            &layout.bounds(),
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            self.tree,
+            layout,
+            cursor,
+            &layout.bounds(),
+            renderer,
+        )
+    }
+}
+
+fn tooltip_surface(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(INK)),
+        text_color: Some(WHITE),
+        border: Border {
+            radius: 9.0.into(),
+            ..Border::default()
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.20),
+            offset: Vector::new(0.0, 5.0),
+            blur_radius: 16.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn tooltip<'a, Message>(
+    id: iced::widget::Id,
+    trigger: impl Into<Element<'a, Message>>,
+    label: &'a str,
+    placement: TooltipPlacement,
+    enabled: bool,
+) -> Element<'a, Message>
+where
+    Message: 'a,
+{
+    Element::new(FocusableTooltip {
+        trigger: trigger.into(),
+        content: container(
+            text(label)
+                .size(11)
+                .font(crate::fonts::MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(Pixels(16.0))),
+        )
+        .padding([6, 9])
+        .style(tooltip_surface)
+        .into(),
+        id,
+        placement,
+        enabled,
+    })
+}
+
 pub fn flat_card(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgb(0.937, 0.937, 0.941))),
@@ -529,12 +1505,8 @@ pub fn button_style_animated(
         let press_mix = press_progress.max(if pressed { 0.75 } else { 0.0 });
         let default_hover = Color::from_rgb8(225, 225, 226);
         let on_surface_hover = Color::from_rgb8(239, 239, 240);
-        let (background, text_color, border_color) = match variant {
-            ButtonVariant::Primary => (
-                Some(if interactive { BLUE_500 } else { BLUE_600 }),
-                WHITE,
-                Color::TRANSPARENT,
-            ),
+        let (background, text_color) = match variant {
+            ButtonVariant::Primary => (Some(if interactive { BLUE_500 } else { BLUE_600 }), WHITE),
             ButtonVariant::Secondary => (
                 Some(if interactive {
                     default_hover
@@ -542,7 +1514,6 @@ pub fn button_style_animated(
                     SURFACE_ALT
                 }),
                 BLUE_700,
-                Color::TRANSPARENT,
             ),
             ButtonVariant::Tertiary => (
                 Some(if interactive {
@@ -551,7 +1522,6 @@ pub fn button_style_animated(
                     SURFACE_ALT
                 }),
                 INK,
-                Color::TRANSPARENT,
             ),
             ButtonVariant::Ghost => (
                 if interactive {
@@ -560,7 +1530,6 @@ pub fn button_style_animated(
                     None
                 },
                 INK,
-                Color::TRANSPARENT,
             ),
             ButtonVariant::Destructive => (
                 Some(if interactive {
@@ -569,7 +1538,6 @@ pub fn button_style_animated(
                     DANGER
                 }),
                 WHITE,
-                Color::TRANSPARENT,
             ),
             ButtonVariant::DangerSoft => (
                 Some(if interactive {
@@ -578,17 +1546,8 @@ pub fn button_style_animated(
                     Color::from_rgba(DANGER.r, DANGER.g, DANGER.b, 0.15)
                 }),
                 Color::from_rgb8(164, 53, 50),
-                Color::TRANSPARENT,
             ),
-            ButtonVariant::Outline => (
-                if interactive {
-                    Some(on_surface_hover)
-                } else {
-                    None
-                },
-                INK,
-                LINE,
-            ),
+            ButtonVariant::Outline => (None, INK),
         };
 
         button::Style {
@@ -610,13 +1569,8 @@ pub fn button_style_animated(
                 text_color
             },
             border: Border {
-                color: border_color,
-                width: if matches!(variant, ButtonVariant::Outline) {
-                    1.0
-                } else {
-                    0.0
-                },
                 radius: RADIUS_CONTROL.into(),
+                ..Border::default()
             },
             shadow: Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.08 * press_mix),
@@ -665,24 +1619,16 @@ pub fn nav_button_animated(
 }
 
 pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {
-    let focused = matches!(status, text_input::Status::Focused { .. });
-    let hovered = matches!(
-        status,
-        text_input::Status::Hovered | text_input::Status::Focused { is_hovered: true }
-    );
     let disabled = matches!(status, text_input::Status::Disabled);
     text_input::Style {
         background: Background::Color(if disabled {
             Color::from_rgba(SURFACE_ALT.r, SURFACE_ALT.g, SURFACE_ALT.b, 0.5)
-        } else if hovered && !focused {
-            Color::from_rgb8(249, 249, 249)
         } else {
             SURFACE
         }),
         border: Border {
-            color: if focused { BLUE_600 } else { LINE },
-            width: if focused { 2.0 } else { 1.0 },
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
         icon: BLUE_600,
         placeholder: INK_SUBTLE,
@@ -692,27 +1638,15 @@ pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_inpu
 }
 
 pub fn pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
-    let hovered = matches!(status, pick_list::Status::Hovered);
     let opened = matches!(status, pick_list::Status::Opened { .. });
     pick_list::Style {
         text_color: INK,
         placeholder_color: INK_SUBTLE,
         handle_color: if opened { BLUE_600 } else { INK_MUTED },
-        background: Background::Color(if hovered {
-            Color::from_rgb8(249, 249, 249)
-        } else {
-            SURFACE
-        }),
+        background: Background::Color(SURFACE),
         border: Border {
-            color: if opened {
-                BLUE_600
-            } else if hovered {
-                BLUE_500
-            } else {
-                LINE
-            },
-            width: if opened { 2.0 } else { 1.0 },
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
     }
 }
@@ -721,9 +1655,8 @@ pub fn pick_list_menu_style(_theme: &Theme) -> menu::Style {
     menu::Style {
         background: Background::Color(SURFACE),
         border: Border {
-            color: LINE,
-            width: 1.0,
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
         text_color: INK,
         selected_text_color: BLUE_700,
@@ -784,9 +1717,8 @@ fn popup_surface(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SURFACE)),
         border: Border {
-            color: LINE,
-            width: 1.0,
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
         shadow: Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.14),
@@ -882,13 +1814,8 @@ fn dropdown_button_style(expanded: bool) -> impl Fn(&Theme, button::Status) -> b
             })),
             text_color: INK,
             border: Border {
-                color: if expanded {
-                    BLUE_600
-                } else {
-                    Color::TRANSPARENT
-                },
-                width: if expanded { 1.0 } else { 0.0 },
                 radius: RADIUS_CONTROL.into(),
+                ..Border::default()
             },
             ..button::Style::default()
         }
@@ -1331,11 +2258,10 @@ where
 
 fn disclosure_surface(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(SURFACE)),
+        background: Some(Background::Color(SURFACE_ALT)),
         border: Border {
-            color: LINE,
-            width: 1.0,
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
         ..container::Style::default()
     }
@@ -1456,19 +2382,13 @@ fn switch_thumb(_theme: &Theme) -> container::Style {
     }
 }
 
-fn switch_button(_theme: &Theme, status: button::Status) -> button::Style {
-    let interactive = matches!(status, button::Status::Hovered | button::Status::Pressed);
+fn switch_button(_theme: &Theme, _status: button::Status) -> button::Style {
     button::Style {
         background: None,
         text_color: INK,
         border: Border {
-            color: if interactive {
-                Color::from_rgba(BLUE_600.r, BLUE_600.g, BLUE_600.b, 0.22)
-            } else {
-                Color::TRANSPARENT
-            },
-            width: 1.0,
             radius: RADIUS_CONTROL.into(),
+            ..Border::default()
         },
         shadow: Shadow::default(),
         ..button::Style::default()
@@ -1551,9 +2471,8 @@ fn checkbox_style_with_progress(
         background: Background::Color(mix_color(SURFACE, BLUE_600, transition_progress)),
         icon_color: mix_color(INK, WHITE, transition_progress),
         border: Border {
-            color: mix_color(LINE, BLUE_600, transition_progress),
-            width: 1.0,
             radius: 4.0.into(),
+            ..Border::default()
         },
         text_color: Some(if disabled { INK_SUBTLE } else { INK }),
     }
@@ -1579,22 +2498,12 @@ where
         .into()
 }
 
-pub fn radio_style(_theme: &Theme, status: iced_radio::Status) -> iced_radio::Style {
-    let (selected, hovered) = match status {
-        iced_radio::Status::Active { is_selected } => (is_selected, false),
-        iced_radio::Status::Hovered { is_selected } => (is_selected, true),
-    };
+pub fn radio_style(_theme: &Theme, _status: iced_radio::Status) -> iced_radio::Style {
     iced_radio::Style {
         background: Background::Color(SURFACE),
         dot_color: BLUE_600,
-        border_width: 1.0,
-        border_color: if selected {
-            BLUE_600
-        } else if hovered {
-            BLUE_500
-        } else {
-            LINE
-        },
+        border_width: 0.0,
+        border_color: Color::TRANSPARENT,
         text_color: Some(INK),
     }
 }
@@ -1780,15 +2689,14 @@ where
 
     fn draw(
         &self,
-        tree: &Tree,
+        _tree: &Tree,
         renderer: &mut iced::Renderer,
         _theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
-        cursor: mouse::Cursor,
+        _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_ref::<HeroSliderState>();
         let bounds = layout.bounds();
         let progress = self.progress();
         let track_border = Border {
@@ -1820,8 +2728,6 @@ where
         }
 
         let handle_center = self.handle_center(bounds);
-        let active = state.is_dragging || cursor.is_over(bounds);
-        let endpoint = progress <= f32::EPSILON || progress >= 1.0 - f32::EPSILON;
         renderer.fill_quad(
             renderer::Quad {
                 bounds: Rectangle {
@@ -1831,15 +2737,8 @@ where
                     height: SLIDER_HANDLE_RADIUS * 2.0,
                 },
                 border: Border {
-                    color: if active {
-                        BLUE_500
-                    } else if endpoint {
-                        BLUE_600
-                    } else {
-                        LINE
-                    },
-                    width: 1.0,
                     radius: SLIDER_HANDLE_RADIUS.into(),
+                    ..Border::default()
                 },
                 ..renderer::Quad::default()
             },
@@ -1927,23 +2826,20 @@ fn readable_on(color: Color) -> Color {
 
 fn chip_style(color: Color, variant: ChipVariant) -> impl Fn(&Theme) -> container::Style {
     move |_theme| {
-        let (background, border_color, border_width, text_color) = match variant {
+        let (background, text_color) = match variant {
             ChipVariant::Flat => (
                 Some(Color::from_rgba(color.r, color.g, color.b, 0.14)),
-                Color::TRANSPARENT,
-                0.0,
                 color,
             ),
-            ChipVariant::Solid => (Some(color), Color::TRANSPARENT, 0.0, readable_on(color)),
-            ChipVariant::Outline => (None, color, 1.0, color),
+            ChipVariant::Solid => (Some(color), readable_on(color)),
+            ChipVariant::Outline => (None, color),
         };
 
         container::Style {
             background: background.map(Background::Color),
             border: Border {
-                color: border_color,
-                width: border_width,
                 radius: 999.0.into(),
+                ..Border::default()
             },
             text_color: Some(text_color),
             ..container::Style::default()
@@ -1992,9 +2888,8 @@ fn badge_surface(color: Color) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(color)),
         border: Border {
-            color: SURFACE,
-            width: 2.0,
             radius: 999.0.into(),
+            ..Border::default()
         },
         shadow: Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.12),
@@ -2481,13 +3376,12 @@ fn message_kind_style(kind: MessageKind) -> (Color, LucideIcon) {
     }
 }
 
-fn global_message_surface(accent: Color) -> impl Fn(&Theme) -> container::Style {
+fn global_message_surface(_accent: Color) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(SURFACE)),
         border: Border {
-            color: Color::from_rgba(accent.r, accent.g, accent.b, 0.26),
-            width: 1.0,
             radius: RADIUS_FIELD.into(),
+            ..Border::default()
         },
         shadow: Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.14),
@@ -2565,13 +3459,12 @@ fn toast_variant_style(variant: ToastVariant) -> (Color, LucideIcon) {
     }
 }
 
-fn toast_surface(accent: Color) -> impl Fn(&Theme) -> container::Style {
+fn toast_surface(_accent: Color) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(SURFACE)),
         border: Border {
-            color: Color::from_rgba(accent.r, accent.g, accent.b, 0.18),
-            width: 1.0,
             radius: RADIUS_INNER.into(),
+            ..Border::default()
         },
         shadow: Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.16),
@@ -2695,9 +3588,8 @@ fn modal_surface(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SURFACE)),
         border: Border {
-            color: LINE,
-            width: 1.0,
             radius: RADIUS_PANEL.into(),
+            ..Border::default()
         },
         shadow: Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.20),
@@ -2913,8 +3805,9 @@ mod tests {
     use super::{
         BadgePosition, CardVariant, GlobalLayer, GlobalModalOptions, HeroSlider, INK, NAVY_950,
         PopupPlacement, SLIDER_HANDLE_RADIUS, SLIDER_HEIGHT, SLIDER_WIDTH, SUCCESS, SWITCH_PADDING,
-        SWITCH_THUMB_SIZE, SWITCH_WIDTH, ToastPlacement, WHITE, badge_offset, popup_origin,
-        readable_on, switch_thumb_offset, translated_popup_placement,
+        SWITCH_THUMB_SIZE, SWITCH_WIDTH, ToastPlacement, WHITE, badge_offset,
+        next_navigation_index, popup_origin, previous_navigation_index, readable_on,
+        switch_thumb_offset, translated_popup_placement,
     };
     use iced::{Point, Rectangle, Size, Vector};
 
@@ -2988,6 +3881,112 @@ mod tests {
     }
 
     #[test]
+    fn component_interaction_styles_are_borderless() {
+        let theme = super::app_theme();
+
+        assert_eq!(
+            super::button_style(super::ButtonVariant::Outline)(
+                &theme,
+                iced::widget::button::Status::Hovered,
+            )
+            .border
+            .width,
+            0.0
+        );
+        assert_eq!(
+            super::text_input_style(
+                &theme,
+                iced::widget::text_input::Status::Focused { is_hovered: true },
+            )
+            .border
+            .width,
+            0.0
+        );
+        assert_eq!(
+            super::pick_list_style(
+                &theme,
+                iced::widget::pick_list::Status::Opened { is_hovered: true },
+            )
+            .border
+            .width,
+            0.0
+        );
+        assert_eq!(
+            super::switch_button(&theme, iced::widget::button::Status::Hovered)
+                .border
+                .width,
+            0.0
+        );
+        assert_eq!(
+            super::checkbox_style(
+                &theme,
+                iced::widget::checkbox::Status::Hovered { is_checked: true },
+            )
+            .border
+            .width,
+            0.0
+        );
+        assert_eq!(
+            super::radio_style(
+                &theme,
+                iced::widget::radio::Status::Hovered { is_selected: true },
+            )
+            .border_width,
+            0.0
+        );
+    }
+
+    #[test]
+    fn temporary_interactions_do_not_add_light_backgrounds() {
+        let theme = super::app_theme();
+
+        assert_eq!(
+            super::button_style(super::ButtonVariant::Outline)(
+                &theme,
+                iced::widget::button::Status::Hovered,
+            )
+            .background,
+            None
+        );
+        assert_eq!(
+            super::text_input_style(
+                &theme,
+                iced::widget::text_input::Status::Focused { is_hovered: true },
+            )
+            .background,
+            iced::Background::Color(super::SURFACE)
+        );
+        assert_eq!(
+            super::pick_list_style(
+                &theme,
+                iced::widget::pick_list::Status::Opened { is_hovered: true },
+            )
+            .background,
+            iced::Background::Color(super::SURFACE)
+        );
+        assert_eq!(
+            super::switch_button(&theme, iced::widget::button::Status::Hovered).background,
+            None
+        );
+        assert_eq!(
+            super::checkbox_style(
+                &theme,
+                iced::widget::checkbox::Status::Hovered { is_checked: false },
+            )
+            .background,
+            iced::Background::Color(super::SURFACE)
+        );
+        assert_eq!(
+            super::radio_style(
+                &theme,
+                iced::widget::radio::Status::Hovered { is_selected: false },
+            )
+            .background,
+            iced::Background::Color(super::SURFACE)
+        );
+    }
+
+    #[test]
     fn popup_flips_and_clamps_inside_the_viewport() {
         let viewport = Size::new(800.0, 600.0);
         let menu = Size::new(208.0, 120.0);
@@ -3047,6 +4046,15 @@ mod tests {
             ToastPlacement::BottomStart.alignment(),
             (iced::Alignment::Start, iced::Alignment::End)
         );
+    }
+
+    #[test]
+    fn keyboard_navigation_wraps_at_collection_edges() {
+        assert_eq!(previous_navigation_index(0, 4), 3);
+        assert_eq!(previous_navigation_index(2, 4), 1);
+        assert_eq!(next_navigation_index(3, 4), 0);
+        assert_eq!(next_navigation_index(1, 4), 2);
+        assert_eq!(next_navigation_index(0, 0), 0);
     }
 
     #[test]
