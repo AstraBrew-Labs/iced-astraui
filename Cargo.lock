@@ -158,8 +158,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "astrabrew-launcher-mac"
-version = "0.2.0"
+name = "astra-ui"
+version = "0.1.0"
 dependencies = [
  "iced",
  "lucide-icons",

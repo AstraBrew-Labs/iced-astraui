@@ -1,8 +1,8 @@
 [package]
-name = "astrabrew-launcher-mac"
-version = "0.2.0"
+name = "astra-ui"
+version = "0.1.0"
 edition = "2024"
-description = "Native macOS launcher for AstraBrew-Labs"
+description = "Iced UI library for AstraBrew-Labs"
 license = "MIT"
 publish = false
 
