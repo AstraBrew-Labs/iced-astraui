@@ -10,7 +10,7 @@ use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, overlay, r
 use iced::animation::{Animation, Easing};
 use iced::time::{Duration, Instant};
 use iced::widget::{
-    button, canvas as iced_canvas, checkbox, column, container, mouse_area, overlay::menu,
+    button, canvas as iced_canvas, checkbox, column, container, image, mouse_area, overlay::menu,
     pick_list, radio as iced_radio, row, rule, scrollable, space, stack, text, text_input,
 };
 use iced::{
@@ -181,12 +181,53 @@ pub enum ButtonVariant {
     Outline,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlertKind {
+    #[default]
     Info,
     Success,
     Warning,
     Danger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AvatarShape {
+    #[default]
+    Circle,
+    Rounded,
+    Square,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AvatarSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AvatarColor {
+    Default,
+    #[default]
+    Accent,
+    Success,
+    Warning,
+    Danger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AccordionVariant {
+    #[default]
+    Default,
+    Surface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AccordionSelectionMode {
+    #[default]
+    Single,
+    Multiple,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,6 +326,165 @@ pub enum ProgressCircleSize {
     #[default]
     Medium,
     Large,
+}
+
+impl AvatarSize {
+    const fn diameter(self) -> f32 {
+        match self {
+            Self::Small => 32.0,
+            Self::Medium => 40.0,
+            Self::Large => 48.0,
+        }
+    }
+}
+
+impl AvatarShape {
+    fn radius(self, diameter: f32) -> iced::border::Radius {
+        match self {
+            Self::Circle => (diameter / 2.0).into(),
+            Self::Rounded => (diameter / 4.0).into(),
+            Self::Square => 0.0.into(),
+        }
+    }
+}
+
+impl AvatarColor {
+    const fn background(self) -> Color {
+        match self {
+            Self::Default => NAVY_800,
+            Self::Accent => BLUE_600,
+            Self::Success => SUCCESS,
+            Self::Warning => WARNING,
+            Self::Danger => DANGER,
+        }
+    }
+}
+
+fn avatar_initial(label: &str) -> String {
+    label
+        .trim()
+        .chars()
+        .next()
+        .map(|character| character.to_uppercase().collect())
+        .filter(|initial: &String| !initial.is_empty())
+        .unwrap_or_else(|| "?".to_owned())
+}
+
+fn avatar_surface(
+    background: Color,
+    radius: iced::border::Radius,
+) -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: Some(Background::Color(background)),
+        border: Border {
+            radius,
+            ..Border::default()
+        },
+        text_color: Some(readable_on(background)),
+        ..container::Style::default()
+    }
+}
+
+/// A profile image with a single-character fallback and three shape variants.
+pub struct Avatar<'a, Message> {
+    label: String,
+    image: Option<image::Handle>,
+    fallback: Option<Element<'a, Message>>,
+    shape: AvatarShape,
+    size: AvatarSize,
+    color: AvatarColor,
+}
+
+impl<'a, Message> Avatar<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            image: None,
+            fallback: None,
+            shape: AvatarShape::Circle,
+            size: AvatarSize::Medium,
+            color: AvatarColor::Accent,
+        }
+    }
+
+    pub fn image(mut self, handle: impl Into<image::Handle>) -> Self {
+        self.image = Some(handle.into());
+        self
+    }
+
+    pub fn fallback(mut self, content: impl Into<Element<'a, Message>>) -> Self {
+        self.fallback = Some(content.into());
+        self
+    }
+
+    pub const fn shape(mut self, shape: AvatarShape) -> Self {
+        self.shape = shape;
+        self
+    }
+
+    pub const fn size(mut self, size: AvatarSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub const fn color(mut self, color: AvatarColor) -> Self {
+        self.color = color;
+        self
+    }
+}
+
+impl<'a, Message> From<Avatar<'a, Message>> for Element<'a, Message>
+where
+    Message: 'a,
+{
+    fn from(avatar: Avatar<'a, Message>) -> Self {
+        let diameter = avatar.size.diameter();
+        let radius = avatar.shape.radius(diameter);
+        let background = avatar.color.background();
+        let foreground = readable_on(background);
+        let fallback: Element<'a, Message> = avatar.fallback.unwrap_or_else(|| {
+            container(
+                text(avatar_initial(&avatar.label))
+                    .size(if avatar.size == AvatarSize::Large {
+                        16
+                    } else {
+                        14
+                    })
+                    .font(crate::fonts::MEDIUM)
+                    .color(foreground),
+            )
+            .width(diameter)
+            .height(diameter)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center)
+            .into()
+        });
+        let fallback = container(fallback)
+            .width(diameter)
+            .height(diameter)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center)
+            .style(avatar_surface(background, radius));
+
+        if let Some(handle) = avatar.image {
+            stack![
+                fallback,
+                image(handle)
+                    .width(diameter)
+                    .height(diameter)
+                    .content_fit(iced::ContentFit::Cover)
+                    .border_radius(radius),
+            ]
+            .width(diameter)
+            .height(diameter)
+            .into()
+        } else {
+            fallback.into()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -4073,6 +4273,225 @@ where
         .into()
 }
 
+pub fn toggle_accordion_item(expanded: &mut [bool], index: usize, mode: AccordionSelectionMode) {
+    let Some(was_expanded) = expanded.get(index).copied() else {
+        return;
+    };
+
+    if mode == AccordionSelectionMode::Single {
+        expanded.fill(false);
+    }
+    if let Some(item) = expanded.get_mut(index) {
+        *item = !was_expanded;
+    }
+}
+
+fn accordion_surface(variant: AccordionVariant) -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: (variant == AccordionVariant::Surface).then_some(Background::Color(SURFACE)),
+        border: if variant == AccordionVariant::Surface {
+            Border {
+                color: LINE,
+                width: 1.0,
+                radius: RADIUS_FIELD.into(),
+            }
+        } else {
+            Border::default()
+        },
+        ..container::Style::default()
+    }
+}
+
+fn accordion_trigger_style(
+    expanded: bool,
+    first: bool,
+    last: bool,
+    variant: AccordionVariant,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        let pressed = matches!(status, button::Status::Pressed);
+        let background = if pressed {
+            Some(Background::Color(Color::from_rgba(
+                BLUE_600.r, BLUE_600.g, BLUE_600.b, 0.09,
+            )))
+        } else if hovered && !expanded {
+            Some(Background::Color(Color::from_rgba(
+                INK.r, INK.g, INK.b, 0.035,
+            )))
+        } else if variant == AccordionVariant::Surface {
+            Some(Background::Color(SURFACE))
+        } else {
+            None
+        };
+        let radius = if first && last && !expanded {
+            RADIUS_FIELD.into()
+        } else if first {
+            iced::border::top(RADIUS_FIELD)
+        } else if last && !expanded {
+            iced::border::bottom(RADIUS_FIELD)
+        } else {
+            iced::border::Radius::default()
+        };
+
+        button::Style {
+            background,
+            text_color: INK,
+            border: Border {
+                radius,
+                ..Border::default()
+            },
+            ..button::Style::default()
+        }
+    }
+}
+
+/// One externally controlled item inside an [`Accordion`].
+pub struct AccordionItem<'a, Message> {
+    title: String,
+    description: Option<String>,
+    expanded: bool,
+    disabled: bool,
+    on_toggle: Message,
+    content: Element<'a, Message>,
+}
+
+impl<'a, Message> AccordionItem<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(
+        title: impl Into<String>,
+        expanded: bool,
+        on_toggle: Message,
+        content: impl Into<Element<'a, Message>>,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            description: None,
+            expanded,
+            disabled: false,
+            on_toggle,
+            content: content.into(),
+        }
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub const fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+}
+
+/// A connected group of collapsible items with optional surface treatment.
+pub struct Accordion<'a, Message> {
+    items: Vec<AccordionItem<'a, Message>>,
+    variant: AccordionVariant,
+}
+
+impl<'a, Message> Accordion<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(items: Vec<AccordionItem<'a, Message>>) -> Self {
+        Self {
+            items,
+            variant: AccordionVariant::Default,
+        }
+    }
+
+    pub const fn variant(mut self, variant: AccordionVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+}
+
+impl<'a, Message> From<Accordion<'a, Message>> for Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    fn from(accordion: Accordion<'a, Message>) -> Self {
+        let item_count = accordion.items.len();
+        let mut items: Vec<Element<'a, Message>> = Vec::with_capacity(item_count * 2);
+
+        for (index, item) in accordion.items.into_iter().enumerate() {
+            let first = index == 0;
+            let last = index + 1 == item_count;
+            let mut labels = column![
+                text(item.title)
+                    .size(13)
+                    .font(crate::fonts::MEDIUM)
+                    .color(INK)
+            ]
+            .spacing(2)
+            .width(Fill);
+            if let Some(description) = item.description {
+                labels = labels.push(
+                    text(description)
+                        .size(11)
+                        .font(crate::fonts::REGULAR)
+                        .color(INK_MUTED),
+                );
+            }
+
+            let trigger = button(
+                row![
+                    labels,
+                    crate::icons::icon(
+                        if item.expanded {
+                            LucideIcon::ChevronUp
+                        } else {
+                            LucideIcon::ChevronDown
+                        },
+                        16,
+                        if item.expanded { BLUE_600 } else { INK_MUTED },
+                    )
+                ]
+                .spacing(12)
+                .align_y(iced::Alignment::Center),
+            )
+            .on_press_maybe((!item.disabled).then_some(item.on_toggle))
+            .width(Fill)
+            .height(52)
+            .padding([10, 14])
+            .style(accordion_trigger_style(
+                item.expanded,
+                first,
+                last,
+                accordion.variant,
+            ));
+            let mut section = column![trigger].width(Fill);
+            if item.expanded {
+                section =
+                    section.push(container(item.content).width(Fill).padding(iced::Padding {
+                        top: 0.0,
+                        right: 14.0,
+                        bottom: 14.0,
+                        left: 14.0,
+                    }));
+            }
+            items.push(section.into());
+            if !last {
+                items.push(
+                    container(rule::horizontal(1))
+                        .padding([0, 14])
+                        .width(Fill)
+                        .into(),
+                );
+            }
+        }
+
+        container(column(items).width(Fill))
+            .width(Fill)
+            .style(accordion_surface(accordion.variant))
+            .into()
+    }
+}
+
 fn switch_thumb_offset(progress: f32) -> f32 {
     let travel = SWITCH_WIDTH - SWITCH_PADDING * 2.0 - SWITCH_THUMB_SIZE;
     SWITCH_PADDING + travel * progress.clamp(0.0, 1.0)
@@ -5305,15 +5724,145 @@ where
     })
 }
 
-pub fn alert(_kind: AlertKind) -> impl Fn(&Theme) -> container::Style {
+impl AlertKind {
+    const fn accent(self) -> Color {
+        match self {
+            Self::Info => BLUE_600,
+            Self::Success => SUCCESS,
+            Self::Warning => WARNING,
+            Self::Danger => DANGER,
+        }
+    }
+
+    const fn icon(self) -> LucideIcon {
+        match self {
+            Self::Info => LucideIcon::Info,
+            Self::Success => LucideIcon::CircleCheck,
+            Self::Warning => LucideIcon::TriangleAlert,
+            Self::Danger => LucideIcon::CircleX,
+        }
+    }
+}
+
+pub fn alert(kind: AlertKind) -> impl Fn(&Theme) -> container::Style {
+    let accent = kind.accent();
     move |_theme| container::Style {
         background: Some(Background::Color(SURFACE)),
         border: Border {
-            radius: RADIUS_PANEL.into(),
-            ..Border::default()
+            color: Color::from_rgba(accent.r, accent.g, accent.b, 0.24),
+            width: 1.0,
+            radius: RADIUS_INNER.into(),
         },
         text_color: Some(INK),
         ..container::Style::default()
+    }
+}
+
+/// An inline status message with a semantic indicator, optional action, and dismissal control.
+pub struct Alert<'a, Message> {
+    title: String,
+    description: Option<String>,
+    kind: AlertKind,
+    indicator: Option<Element<'a, Message>>,
+    action: Option<Element<'a, Message>>,
+    on_close: Option<Message>,
+}
+
+impl<'a, Message> Alert<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            description: None,
+            kind: AlertKind::Info,
+            indicator: None,
+            action: None,
+            on_close: None,
+        }
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub const fn kind(mut self, kind: AlertKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    pub fn indicator(mut self, indicator: impl Into<Element<'a, Message>>) -> Self {
+        self.indicator = Some(indicator.into());
+        self
+    }
+
+    pub fn action(mut self, action: impl Into<Element<'a, Message>>) -> Self {
+        self.action = Some(action.into());
+        self
+    }
+
+    pub fn on_close(mut self, on_close: Message) -> Self {
+        self.on_close = Some(on_close);
+        self
+    }
+}
+
+impl<'a, Message> From<Alert<'a, Message>> for Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    fn from(notice: Alert<'a, Message>) -> Self {
+        let accent = notice.kind.accent();
+        let indicator: Element<'a, Message> = notice.indicator.unwrap_or_else(|| {
+            container(crate::icons::icon(notice.kind.icon(), 17, accent))
+                .width(32)
+                .height(32)
+                .align_x(iced::Alignment::Center)
+                .align_y(iced::Alignment::Center)
+                .style(tag_style(accent))
+                .into()
+        });
+        let mut content = column![
+            text(notice.title)
+                .size(13)
+                .font(crate::fonts::MEDIUM)
+                .color(accent)
+        ]
+        .spacing(2)
+        .width(Fill);
+        if let Some(description) = notice.description {
+            content = content.push(
+                text(description)
+                    .size(12)
+                    .font(crate::fonts::REGULAR)
+                    .color(INK_MUTED),
+            );
+        }
+
+        let mut layout = row![indicator, content]
+            .spacing(12)
+            .align_y(iced::Alignment::Start);
+        if let Some(action) = notice.action {
+            layout = layout.push(action);
+        }
+        if let Some(on_close) = notice.on_close {
+            layout = layout.push(
+                button(centered_button_icon(LucideIcon::X, 14, INK_MUTED))
+                    .on_press(on_close)
+                    .width(30)
+                    .height(30)
+                    .padding(0)
+                    .style(button_style(ButtonVariant::Ghost)),
+            );
+        }
+
+        container(layout)
+            .width(Fill)
+            .padding([12, 14])
+            .style(alert(notice.kind))
+            .into()
     }
 }
 
@@ -5762,6 +6311,175 @@ impl Default for GlobalModalOptions {
     }
 }
 
+/// A required-action global dialog for consequential confirmations.
+pub struct AlertDialog<'a, Message> {
+    title: String,
+    description: String,
+    body: Option<Element<'a, Message>>,
+    status: AlertKind,
+    cancel_label: String,
+    confirm_label: String,
+    destructive: bool,
+    on_cancel: Message,
+    on_confirm: Message,
+    on_interact: Message,
+}
+
+impl<'a, Message> AlertDialog<'a, Message>
+where
+    Message: 'a,
+{
+    pub fn new(
+        title: impl Into<String>,
+        description: impl Into<String>,
+        on_cancel: Message,
+        on_confirm: Message,
+        on_interact: Message,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            description: description.into(),
+            body: None,
+            status: AlertKind::Danger,
+            cancel_label: "Cancel".to_owned(),
+            confirm_label: "Confirm".to_owned(),
+            destructive: false,
+            on_cancel,
+            on_confirm,
+            on_interact,
+        }
+    }
+
+    pub fn body(mut self, body: impl Into<Element<'a, Message>>) -> Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    pub const fn status(mut self, status: AlertKind) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub fn cancel_label(mut self, label: impl Into<String>) -> Self {
+        self.cancel_label = label.into();
+        self
+    }
+
+    pub fn confirm_label(mut self, label: impl Into<String>) -> Self {
+        self.confirm_label = label.into();
+        self
+    }
+
+    pub const fn destructive(mut self, destructive: bool) -> Self {
+        self.destructive = destructive;
+        self
+    }
+}
+
+impl<'a, Message> From<AlertDialog<'a, Message>> for Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    fn from(alert_dialog: AlertDialog<'a, Message>) -> Self {
+        let accent = alert_dialog.status.accent();
+        let icon = container(crate::icons::icon(alert_dialog.status.icon(), 20, accent))
+            .width(40)
+            .height(40)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center)
+            .style(tag_style(accent));
+        let header = column![
+            icon,
+            text(alert_dialog.title)
+                .size(17)
+                .font(crate::fonts::MEDIUM)
+                .color(INK),
+        ]
+        .spacing(12)
+        .width(Fill);
+        let mut body = column![
+            text(alert_dialog.description)
+                .size(13)
+                .font(crate::fonts::REGULAR)
+                .color(INK_MUTED)
+        ]
+        .spacing(10)
+        .width(Fill);
+        if let Some(custom_body) = alert_dialog.body {
+            body = body.push(custom_body);
+        }
+
+        let cancel = button(
+            container(
+                text(alert_dialog.cancel_label)
+                    .size(13)
+                    .font(crate::fonts::MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(Pixels(20.0))),
+            )
+            .height(Fill)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center),
+        )
+        .on_press(alert_dialog.on_cancel)
+        .height(CONTROL_HEIGHT_MD)
+        .padding([0, 16])
+        .style(button_style(ButtonVariant::Secondary));
+        let confirm = button(
+            container(
+                text(alert_dialog.confirm_label)
+                    .size(13)
+                    .font(crate::fonts::MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(Pixels(20.0))),
+            )
+            .height(Fill)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center),
+        )
+        .on_press(alert_dialog.on_confirm)
+        .height(CONTROL_HEIGHT_MD)
+        .padding([0, 16])
+        .style(button_style(if alert_dialog.destructive {
+            ButtonVariant::Destructive
+        } else {
+            ButtonVariant::Primary
+        }));
+        let dialog = mouse_area(
+            container(
+                column![
+                    header,
+                    body,
+                    row![space::horizontal(), cancel, confirm]
+                        .spacing(8)
+                        .align_y(iced::Alignment::Center),
+                ]
+                .spacing(18),
+            )
+            .width(400)
+            .padding(24)
+            .style(modal_surface),
+        )
+        .on_press(alert_dialog.on_interact.clone());
+
+        stack![
+            button(space::Space::new())
+                .on_press(alert_dialog.on_interact)
+                .width(Fill)
+                .height(Fill)
+                .padding(0)
+                .style(modal_backdrop),
+            container(dialog)
+                .width(Fill)
+                .height(Fill)
+                .align_x(iced::Alignment::Center)
+                .align_y(iced::Alignment::Center)
+                .padding(24),
+        ]
+        .width(Fill)
+        .height(Fill)
+        .into()
+    }
+}
+
 /// A global modal shell. Clicking the backdrop closes it by default.
 #[allow(clippy::too_many_arguments)]
 pub fn global_modal<'a, Message>(
@@ -5936,18 +6654,19 @@ pub fn tab_animated(
 #[cfg(test)]
 mod tests {
     use super::{
-        BadgePosition, CardVariant, GlobalLayer, GlobalModalOptions, HeroSlider, INK, NAVY_950,
-        PaginationItem, PopupPlacement, ProgressBar, ProgressBarColor, ProgressBarSize,
+        AccordionSelectionMode, AlertDialog, AlertKind, Avatar, AvatarColor, AvatarShape,
+        AvatarSize, BadgePosition, CardVariant, GlobalLayer, GlobalModalOptions, HeroSlider, INK,
+        NAVY_950, PaginationItem, PopupPlacement, ProgressBar, ProgressBarColor, ProgressBarSize,
         ProgressCircle, ProgressCircleColor, ProgressCircleSize, SLIDER_HANDLE_RADIUS,
         SLIDER_HEIGHT, SLIDER_WIDTH, SUCCESS, SWITCH_PADDING, SWITCH_THUMB_SIZE, SWITCH_WIDTH,
         ScrollMetrics, ScrollShadowEdges, ScrollShadowOrientation, SelectableTypography,
         SelectableTypographyState, Separator, SeparatorOrientation, SeparatorVariant,
         ToastPlacement, Typography, TypographyType, TypographyWeight, WHITE,
-        automatic_scroll_shadow_edges, badge_offset, indeterminate_segment, next_navigation_index,
-        pagination_items, popup_origin, previous_navigation_index, progress_circle_arc,
-        progress_fraction, readable_on, switch_thumb_offset, translated_popup_placement,
-        translated_typography_context_position, typography_context_menu_text_layout,
-        typography_font,
+        automatic_scroll_shadow_edges, avatar_initial, badge_offset, indeterminate_segment,
+        next_navigation_index, pagination_items, popup_origin, previous_navigation_index,
+        progress_circle_arc, progress_fraction, readable_on, switch_thumb_offset,
+        toggle_accordion_item, translated_popup_placement, translated_typography_context_position,
+        typography_context_menu_text_layout, typography_font,
     };
     use iced::{Point, Rectangle, Size, Vector};
 
@@ -5958,6 +6677,84 @@ mod tests {
             step: 0.1,
             on_change: Box::new(|_| ()),
         }
+    }
+
+    #[test]
+    fn avatar_shapes_sizes_and_default_fallback_are_stable() {
+        let avatar: Avatar<'_, ()> = Avatar::new("Astra");
+        assert_eq!(avatar.shape, AvatarShape::Circle);
+        assert_eq!(avatar.size, AvatarSize::Medium);
+        assert_eq!(avatar.color, AvatarColor::Accent);
+        assert!(avatar.image.is_none());
+        assert!(avatar.fallback.is_none());
+        assert_eq!(avatar_initial("Astra"), "A");
+        assert_eq!(avatar_initial("  中文"), "中");
+        assert_eq!(avatar_initial("  "), "?");
+
+        let circle = AvatarShape::Circle.radius(40.0);
+        let rounded = AvatarShape::Rounded.radius(40.0);
+        let square = AvatarShape::Square.radius(40.0);
+        assert_eq!(
+            (
+                circle.top_left,
+                circle.top_right,
+                circle.bottom_right,
+                circle.bottom_left
+            ),
+            (20.0, 20.0, 20.0, 20.0)
+        );
+        assert_eq!(
+            (
+                rounded.top_left,
+                rounded.top_right,
+                rounded.bottom_right,
+                rounded.bottom_left,
+            ),
+            (10.0, 10.0, 10.0, 10.0)
+        );
+        assert_eq!(square, iced::border::Radius::default());
+        assert_eq!(AvatarSize::Small.diameter(), 32.0);
+        assert_eq!(AvatarSize::Large.diameter(), 48.0);
+    }
+
+    #[test]
+    fn alert_statuses_map_to_distinct_indicators() {
+        let theme = super::app_theme();
+        let info = super::alert(AlertKind::Info)(&theme);
+        let warning = super::alert(AlertKind::Warning)(&theme);
+
+        assert_eq!(info.border.width, 1.0);
+        assert_eq!(warning.border.width, 1.0);
+        assert_ne!(AlertKind::Info.accent(), AlertKind::Success.accent());
+        assert_ne!(AlertKind::Warning.accent(), AlertKind::Danger.accent());
+        assert_ne!(info.border.color, warning.border.color);
+    }
+
+    #[test]
+    fn accordion_toggle_supports_single_and_multiple_selection() {
+        let mut single = [true, false, false];
+        toggle_accordion_item(&mut single, 1, AccordionSelectionMode::Single);
+        assert_eq!(single, [false, true, false]);
+        toggle_accordion_item(&mut single, 1, AccordionSelectionMode::Single);
+        assert_eq!(single, [false, false, false]);
+
+        let mut multiple = [true, false, false];
+        toggle_accordion_item(&mut multiple, 1, AccordionSelectionMode::Multiple);
+        assert_eq!(multiple, [true, true, false]);
+        toggle_accordion_item(&mut multiple, usize::MAX, AccordionSelectionMode::Multiple);
+        assert_eq!(multiple, [true, true, false]);
+    }
+
+    #[test]
+    fn alert_dialog_defaults_to_required_danger_confirmation() {
+        let dialog = AlertDialog::new("Delete?", "This cannot be undone.", (), (), ())
+            .confirm_label("Delete")
+            .destructive(true);
+
+        assert_eq!(dialog.status, AlertKind::Danger);
+        assert_eq!(dialog.cancel_label, "Cancel");
+        assert_eq!(dialog.confirm_label, "Delete");
+        assert!(dialog.destructive);
     }
 
     #[test]

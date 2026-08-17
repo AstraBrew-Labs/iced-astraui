@@ -100,6 +100,9 @@ pub(crate) enum Message {
     ChannelSelected(Channel),
     RadioChanged(usize),
     DisclosureToggled(bool),
+    AccordionToggled(usize),
+    DismissDemoAlert,
+    RestoreDemoAlert,
     DropdownToggled(bool),
     ContextMenuOpened(Point),
     DismissMenus,
@@ -144,6 +147,8 @@ pub struct Launcher {
     channel: Channel,
     radio_choice: usize,
     disclosure_open: bool,
+    accordion_expanded: [bool; 3],
+    show_demo_alert: bool,
     dropdown_open: bool,
     context_menu_position: Option<Point>,
     active_tab: usize,
@@ -179,6 +184,8 @@ impl Launcher {
             Self {
                 slider: 68.0,
                 disclosure_open: true,
+                accordion_expanded: [true, false, false],
+                show_demo_alert: true,
                 pagination_page: 6,
                 tag_labels: vec!["Design", "Rust", "Desktop", "Accessible"],
                 tag_selected: vec![true, true, false, false],
@@ -258,6 +265,13 @@ impl Launcher {
             Message::ChannelSelected(channel) => self.channel = channel,
             Message::RadioChanged(choice) => self.radio_choice = choice,
             Message::DisclosureToggled(expanded) => self.disclosure_open = expanded,
+            Message::AccordionToggled(index) => ui::toggle_accordion_item(
+                &mut self.accordion_expanded,
+                index,
+                ui::AccordionSelectionMode::Single,
+            ),
+            Message::DismissDemoAlert => self.show_demo_alert = false,
+            Message::RestoreDemoAlert => self.show_demo_alert = true,
             Message::DropdownToggled(expanded) => {
                 self.dropdown_open = expanded;
                 self.context_menu_position = None;
@@ -782,37 +796,18 @@ impl Launcher {
                 Message::ConfirmModal,
                 Message::Noop,
             ),
-            ModalKind::Confirmation => ui::global_modal_with_options(
+            ModalKind::Confirmation => ui::AlertDialog::new(
                 "Delete local preset?",
-                "This action requires confirmation.",
-                row![
-                    container(icons::icon(Icon::TriangleAlert, 20, ui::DANGER))
-                        .width(40)
-                        .height(40)
-                        .align_x(Alignment::Center)
-                        .align_y(Alignment::Center)
-                        .style(ui::tag_style(ui::DANGER)),
-                    column![
-                        text("The preset will be removed from this device.")
-                            .size(13)
-                            .font(fonts::MEDIUM),
-                        text("This operation cannot be undone.")
-                            .size(11)
-                            .font(fonts::REGULAR)
-                            .color(ui::INK_MUTED),
-                    ]
-                    .spacing(4)
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-                "Cancel",
-                "Delete",
-                true,
+                "The preset will be removed from this device. This operation cannot be undone.",
                 Message::CloseModal,
                 Message::ConfirmModal,
                 Message::Noop,
-                ui::GlobalModalOptions::confirmation(),
-            ),
+            )
+            .status(ui::AlertKind::Danger)
+            .cancel_label("Cancel")
+            .confirm_label("Delete")
+            .destructive(true)
+            .into(),
         }
     }
 
@@ -1295,6 +1290,10 @@ impl Launcher {
             .spacing(16),
         );
 
+        let avatar_showcase = self.avatar_showcase();
+        let alert_showcase = self.alert_showcase();
+        let accordion_showcase = self.accordion_showcase();
+        let alert_dialog_showcase = self.alert_dialog_showcase();
         let progress_bars = self.progress_bar_showcase();
         let progress_circles = self.progress_circle_showcase();
         let separator_showcase = self.separator_showcase();
@@ -1307,6 +1306,10 @@ impl Launcher {
             header,
             buttons,
             fields,
+            avatar_showcase,
+            alert_showcase,
+            accordion_showcase,
+            alert_dialog_showcase,
             progress_bars,
             progress_circles,
             separator_showcase,
@@ -1321,6 +1324,187 @@ impl Launcher {
         .padding([34, 42])
         .width(Fill)
         .into()
+    }
+
+    fn avatar_showcase(&self) -> Element<'_, Message> {
+        fn avatar_example<'a>(
+            label: &'static str,
+            avatar: Element<'a, Message>,
+        ) -> Element<'a, Message> {
+            column![
+                avatar,
+                text(label)
+                    .size(10)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            ]
+            .spacing(8)
+            .align_x(Alignment::Center)
+            .into()
+        }
+
+        self.component_card(
+            "Avatar",
+            "Profile images with circular, rounded, and square shapes plus resilient fallback content.",
+            row![
+                avatar_example(
+                    "Circle",
+                    ui::Avatar::new("Astra")
+                        .size(ui::AvatarSize::Large)
+                        .shape(ui::AvatarShape::Circle)
+                        .into(),
+                ),
+                avatar_example(
+                    "Rounded",
+                    ui::Avatar::new("Brew")
+                        .size(ui::AvatarSize::Large)
+                        .shape(ui::AvatarShape::Rounded)
+                        .color(ui::AvatarColor::Success)
+                        .into(),
+                ),
+                avatar_example(
+                    "Square",
+                    ui::Avatar::new("Components")
+                        .size(ui::AvatarSize::Large)
+                        .shape(ui::AvatarShape::Square)
+                        .color(ui::AvatarColor::Warning)
+                        .into(),
+                ),
+                avatar_example(
+                    "Image",
+                    ui::Avatar::new("Studio")
+                        .image("assets/icon/icon.png")
+                        .size(ui::AvatarSize::Large)
+                        .shape(ui::AvatarShape::Rounded)
+                        .into(),
+                ),
+                avatar_example(
+                    "Custom fallback",
+                    ui::Avatar::new("Custom")
+                        .fallback(icons::icon(Icon::UserRound, 20, ui::WHITE))
+                        .size(ui::AvatarSize::Large)
+                        .shape(ui::AvatarShape::Circle)
+                        .color(ui::AvatarColor::Danger)
+                        .into(),
+                ),
+            ]
+            .spacing(24)
+            .align_y(Alignment::Start),
+        )
+    }
+
+    fn alert_showcase(&self) -> Element<'_, Message> {
+        let dismissible: Element<'_, Message> = if self.show_demo_alert {
+            ui::Alert::new("Workspace published")
+                .description("The local component index is ready for use.")
+                .kind(ui::AlertKind::Success)
+                .on_close(Message::DismissDemoAlert)
+                .into()
+        } else {
+            button(button_text("Restore success alert", 12.0))
+                .on_press(Message::RestoreDemoAlert)
+                .height(ui::CONTROL_HEIGHT_MD)
+                .padding([8, 14])
+                .style(ui::button_style(ui::ButtonVariant::Secondary))
+                .into()
+        };
+        let retry: Element<'_, Message> = button(button_text("Retry", 12.0))
+            .on_press(Message::Action("Connection retry requested"))
+            .height(32)
+            .padding([6, 12])
+            .style(ui::button_style(ui::ButtonVariant::DangerSoft))
+            .into();
+
+        self.component_card(
+            "Alert",
+            "Important inline messages with semantic status indicators, actions, and dismissal.",
+            column![
+                ui::Alert::new("Component update available")
+                    .description("Refresh the local index to load the newest primitives.")
+                    .kind(ui::AlertKind::Info),
+                dismissible,
+                ui::Alert::new("Scheduled maintenance")
+                    .description("Publishing will pause briefly at 02:00 UTC.")
+                    .kind(ui::AlertKind::Warning),
+                ui::Alert::new("Unable to reach registry")
+                    .description("The last known local component index remains available.")
+                    .kind(ui::AlertKind::Danger)
+                    .action(retry),
+            ]
+            .spacing(10),
+        )
+    }
+
+    fn accordion_showcase(&self) -> Element<'_, Message> {
+        let items = vec![
+            ui::AccordionItem::new(
+                "Component structure",
+                self.accordion_expanded[0],
+                Message::AccordionToggled(0),
+                text("Compose focused primitives and keep application state outside the view.")
+                    .size(12)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            )
+            .description("Ownership and composition rules"),
+            ui::AccordionItem::new(
+                "Theme tokens",
+                self.accordion_expanded[1],
+                Message::AccordionToggled(1),
+                text("Blue and cyan accents share semantic success, warning, and danger states.")
+                    .size(12)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            )
+            .description("Color, radius, and typography"),
+            ui::AccordionItem::new(
+                "Keyboard behavior",
+                self.accordion_expanded[2],
+                Message::AccordionToggled(2),
+                text("Triggers remain keyboard focusable and publish the same toggle messages.")
+                    .size(12)
+                    .font(fonts::REGULAR)
+                    .color(ui::INK_MUTED),
+            )
+            .description("Predictable interaction states"),
+        ];
+
+        self.component_card(
+            "Accordion",
+            "Connected disclosure items organize related information in a compact surface.",
+            ui::Accordion::new(items).variant(ui::AccordionVariant::Surface),
+        )
+    }
+
+    fn alert_dialog_showcase(&self) -> Element<'_, Message> {
+        self.component_card(
+            "AlertDialog",
+            "A required-action global dialog for critical confirmation workflows.",
+            row![
+                container(icons::icon(Icon::ShieldAlert, 18, ui::DANGER))
+                    .width(36)
+                    .height(36)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .style(ui::tag_style(ui::DANGER)),
+                column![
+                    text("Delete local preset").size(13).font(fonts::MEDIUM),
+                    text("Requires an explicit Cancel or Delete decision.")
+                        .size(11)
+                        .font(fonts::REGULAR)
+                        .color(ui::INK_MUTED),
+                ]
+                .spacing(3),
+                space::horizontal(),
+                button(button_text("Open alert dialog", 13.0))
+                    .on_press(Message::OpenModal(ModalKind::Confirmation))
+                    .height(ui::CONTROL_HEIGHT_MD)
+                    .padding([8, 16])
+                    .style(ui::button_style(ui::ButtonVariant::Destructive)),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        )
     }
 
     fn progress_bar_showcase(&self) -> Element<'_, Message> {
@@ -2469,6 +2653,30 @@ mod tests {
                 .as_ref()
                 .map(|message| message.description.as_str()),
             Some("Component deleted")
+        );
+    }
+
+    #[test]
+    fn accordion_alert_and_alert_dialog_state_are_controlled() {
+        let (mut launcher, _) = Launcher::new();
+
+        assert_eq!(launcher.accordion_expanded, [true, false, false]);
+        let _ = launcher.update(Message::AccordionToggled(1));
+        assert_eq!(launcher.accordion_expanded, [false, true, false]);
+
+        assert!(launcher.show_demo_alert);
+        let _ = launcher.update(Message::DismissDemoAlert);
+        assert!(!launcher.show_demo_alert);
+        let _ = launcher.update(Message::RestoreDemoAlert);
+        assert!(launcher.show_demo_alert);
+
+        let _ = launcher.update(Message::OpenModal(ModalKind::Confirmation));
+        assert_eq!(launcher.modal, Some(ModalKind::Confirmation));
+        let _ = launcher.update(Message::ConfirmModal);
+        assert!(launcher.modal.is_none());
+        assert_eq!(
+            launcher.global_message.as_ref().map(|message| message.kind),
+            Some(ui::MessageKind::Warning)
         );
     }
 
