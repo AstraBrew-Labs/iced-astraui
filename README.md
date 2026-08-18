@@ -6,6 +6,8 @@
 面向 [iced](https://iced.rs/) 的 Rust 桌面 UI 组件库与设计系统。
 
 [![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![crates.io](https://img.shields.io/crates/v/iced-astraui?color=CE422B&logo=rust)](https://crates.io/crates/iced-astraui)
+[![docs.rs](https://img.shields.io/docsrs/iced-astraui?color=08A5E5)](https://docs.rs/iced-astraui)
 [![iced 0.14](https://img.shields.io/badge/iced-0.14-08A5E5)](https://iced.rs/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 [![Status](https://img.shields.io/badge/status-early%20development-F59E0B)](#项目状态)
@@ -58,7 +60,16 @@ Showcase 包含三个页面：`Components` 展示交互组件，`Tokens` 展示�
 
 ### 添加依赖
 
-Cargo 包名是 `iced-astraui`，Rust 代码中的 crate 名是 `astra_ui`。当前版本尚未发布到 crates.io，请直接引用 Git 仓库：
+Cargo 包名是 `iced-astraui`，Rust 代码中的 crate 名是 `astra_ui`。已发布到 [crates.io](https://crates.io/crates/iced-astraui)，直接按版本添加依赖：
+
+```toml
+[dependencies]
+iced = "0.14"
+iced-astraui = "0.0.1"
+lucide-icons = { version = "1.31", features = ["iced"] }
+```
+
+如需使用尚未发布的最新提交，可引用 Git 仓库：
 
 ```toml
 [dependencies]
