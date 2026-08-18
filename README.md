@@ -1,101 +1,91 @@
 <div align="center">
-  <img src="assets/icon/icon.png" alt="Astra UI" width="96" height="96">
+  <img src="assets/icon/icon.png" alt="Astra UI logo" width="96" height="96">
 
 # Astra UI
 
-**参考 HeroUI v3 设计语言，为 iced 打造的 Rust 桌面 UI 组件库。**
+面向 [iced](https://iced.rs/) 的 Rust 桌面 UI 组件库与设计系统。
 
-用一致的视觉规范、语义化 API 和可复用交互组件，帮助你更快完成现代桌面应用界面。
-
-[![Rust](https://img.shields.io/badge/Rust-2024-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![iced](https://img.shields.io/badge/iced-0.14-08A5E5)](https://iced.rs/)
-[![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
+[![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![iced 0.14](https://img.shields.io/badge/iced-0.14-08A5E5)](https://iced.rs/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 [![Status](https://img.shields.io/badge/status-early%20development-F59E0B)](#项目状态)
 
 </div>
 
-## 关于 Astra UI
+Astra UI 使用 Rust 原生实现，不依赖 WebView。它借鉴 HeroUI v3 清晰、克制的视觉语言，并针对 iced 的消息驱动模型和桌面交互方式重新设计组件 API。项目集中提供颜色、排版、间距、圆角和动效规范，减少应用中重复的样式代码。
 
-Astra UI 是一个面向 [iced](https://iced.rs/) 应用的本地 UI 设计系统。它借鉴 [HeroUI v3](https://www.heroui.com/) 清晰、克制的视觉语言，并结合原生桌面应用的交互方式重新实现，而不是对 Web 组件的逐项移植。
+> Astra UI 是独立项目，与 HeroUI 官方没有隶属或合作关系。
 
-项目提供统一的颜色、圆角、间距、字号和动效规范，以及可以直接组合进 iced `view` 的组件与样式。目标是减少重复的样式代码，让应用开发更专注于业务状态和交互逻辑。
+## 能力概览
 
-> Astra UI 是独立开发的项目，与 HeroUI 官方没有隶属或合作关系。
-
-## 特性
-
-- **HeroUI 风格**：简洁的表面层级、柔和圆角、语义色彩和一致的控件尺寸。
-- **原生 iced 组件**：基于 Rust 与 iced 构建，不依赖 WebView 或前端运行时。
-- **语义化变体**：通过 `Primary`、`Secondary`、`Ghost`、`Danger` 等变体快速表达组件用途。
-- **可组合 API**：卡片、提示、菜单、弹窗等组件可以和 iced 原生 widget 一起组合。
-- **完整交互状态**：覆盖 hover、pressed、focused、selected、disabled 等常见状态。
-- **短时动效**：内置按钮、开关、复选框和进度组件的轻量过渡动画。
-- **统一设计令牌**：集中管理颜色、圆角、控件高度和排版规范。
-- **本地字体与图标**：内置 HarmonyOS Sans 字重，并使用 Lucide 图标。
+- 原生 iced 组件，可与 `iced::widget` 直接组合。
+- 统一的语义色、尺寸、圆角、排版和交互状态。
+- `Primary`、`Secondary`、`Ghost`、`Destructive` 等语义化变体。
+- 按钮、开关、复选框、导航和进度控件的轻量动效支持。
+- 内置 HarmonyOS Sans 六种字重与 Lucide 图标适配。
+- 可运行的 Showcase，覆盖组件、设计令牌和常见组合模式。
 
 ## 组件
 
-当前 Showcase 已覆盖以下组件和模式：
-
-| 分类 | 组件 |
+| 分类 | API |
 | --- | --- |
-| 基础 | Button、Typography、Separator、Card、Avatar、Badge、Chip |
-| 输入 | Text Input、Select、Checkbox、Radio、Switch、Slider |
-| 导航 | Tabs、Pagination、Disclosure、Accordion |
-| 操作 | Dropdown、Context Menu、Toolbar、Toggle Button、Tag Group、Tooltip |
-| 反馈 | Alert、Global Message、Toast、Progress Bar、Progress Circle |
-| 浮层 | Modal、Alert Dialog、Global Layer、Scroll Shadow |
+| 内容与容器 | `Avatar`、`badge`、`Card`、`Surface`、`chip`、`Kbd`、`Separator`、`Typography` |
+| 输入与操作 | `Label`、`TextArea`、`InputOTP`、Button styles、Checkbox styles、`radio`、`slider`、`switch`、Toggle Button、Tag Group |
+| 导航 | `Accordion`、`disclosure`、`pagination`、`Tabs`、`ListBox`、`toolbar` |
+| 反馈 | `Alert`、Global Message、Progress Bar、Progress Circle、Toast |
+| 浮层 | Context Menu、Dropdown、`AlertDialog`、`Drawer`、Global Modal、Tooltip |
+| 布局基础 | `GlobalLayer`、`ScrollShadow` |
 
-组件、设计令牌和常见组合模式都可以在仓库内置的 Showcase 中查看。
+此外，Astra UI 为 iced 原生 `text_input`、`pick_list`、`button`、`checkbox` 等控件提供配套样式函数。
 
 ## 快速开始
 
 ### 环境要求
 
-- Rust stable
+- Rust 1.85 或更高版本
 - Cargo
-- macOS（当前主要开发与验证平台）
+- iced 支持的桌面平台；当前主要在 macOS 上开发和验证
 
 ### 运行 Showcase
 
 ```bash
 git clone https://github.com/AstraBrew-Labs/iced-astraui.git
 cd iced-astraui
-cargo run --release
+cargo run --release --example showcase
 ```
 
-仅检查项目是否能够正常编译：
+Showcase 包含三个页面：`Components` 展示交互组件，`Tokens` 展示颜色与排版令牌，`Patterns` 展示组合模式。
 
-```bash
-cargo check
-```
+### 添加依赖
 
-### 在项目中使用
-
-当前版本以本地组件源码和 Showcase 的形式维护，尚未发布到 crates.io。你可以将以下模块和资源集成到现有 iced 项目中：
-
-```text
-src/ui.rs
-src/fonts.rs
-src/icons.rs
-assets/fonts/
-```
-
-并添加对应依赖：
+Cargo 包名是 `iced-astraui`，Rust 代码中的 crate 名是 `astra_ui`。当前版本尚未发布到 crates.io，请直接引用 Git 仓库：
 
 ```toml
 [dependencies]
-iced = { version = "0.14.0", features = ["advanced", "canvas", "image", "tokio"] }
-lucide-icons = { version = "1.31.0", features = ["iced"] }
+iced = "0.14"
+iced-astraui = { git = "https://github.com/AstraBrew-Labs/iced-astraui" }
+lucide-icons = { version = "1.31", features = ["iced"] }
 ```
 
-一个简单的组件组合示例：
+在本地同时开发应用和组件库时，可以使用路径依赖：
+
+```toml
+[dependencies]
+iced = "0.14"
+iced-astraui = { path = "../iced-astraui" }
+lucide-icons = { version = "1.31", features = ["iced"] }
+```
+
+### 最小示例
 
 ```rust
+use astra_ui::{fonts, ui, Alert, AlertKind, ButtonVariant, Card};
 use iced::widget::{button, column, text};
-use iced::{Element, Fill};
+use iced::{Element, Fill, Task, Theme};
+use lucide_icons::LUCIDE_FONT_BYTES;
 
-use crate::ui::{self, Alert, AlertKind, ButtonVariant, Card};
+#[derive(Default)]
+struct App;
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -103,72 +93,95 @@ enum Message {
     Dismiss,
 }
 
-fn view() -> Element<'static, Message> {
-    Card::new(
-        column![
-            text("工作区设置"),
-            Alert::new("配置已同步")
-                .description("所有更改均已保存到本地")
-                .kind(AlertKind::Success)
-                .on_close(Message::Dismiss),
-            button("保存")
-                .on_press(Message::Save)
-                .style(ui::button_style(ButtonVariant::Primary)),
-        ]
-        .spacing(16)
-        .width(Fill),
-    )
-    .width(Fill)
-    .into()
+impl App {
+    fn update(&mut self, _message: Message) -> Task<Message> {
+        Task::none()
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        Card::new(
+            column![
+                text("Workspace settings"),
+                Alert::new("Configuration synced")
+                    .description("All changes are stored locally.")
+                    .kind(AlertKind::Success)
+                    .on_close(Message::Dismiss),
+                button("Save")
+                    .on_press(Message::Save)
+                    .style(ui::button_style(ButtonVariant::Primary)),
+            ]
+            .spacing(16)
+            .width(Fill),
+        )
+        .width(Fill)
+        .into()
+    }
+
+    fn theme(&self) -> Theme {
+        ui::app_theme()
+    }
+}
+
+fn main() -> iced::Result {
+    let mut application = iced::application(App::default, App::update, App::view)
+        .theme(App::theme)
+        .font(LUCIDE_FONT_BYTES);
+
+    for (_, bytes) in fonts::FONT_MAPPINGS {
+        application = application.font(bytes);
+    }
+
+    application.default_font(fonts::REGULAR).run()
 }
 ```
 
-应用主题可以直接使用 `ui::app_theme()`：
+组件可从 crate 根路径导入，也可以使用 `astra_ui::ui::*` 兼容路径或 `astra_ui::prelude::*`。部分组件内部也会使用 Lucide 图标，因此应用需要注册 `lucide_icons::LUCIDE_FONT_BYTES`；完整方式可参考 [`examples/showcase.rs`](examples/showcase.rs)。
 
-```rust
-iced::application(App::new, App::update, App::view)
-    .theme(|_| ui::app_theme())
-    .run()
-```
+## 设计与状态
+
+应用主题通过 `ui::app_theme()` 获取。颜色和尺寸令牌由 crate 根路径与 `ui` 模块共同导出，例如 `BLUE_600`、`INK_MUTED`、`RADIUS_FIELD` 和 `CONTROL_HEIGHT_MD`。
+
+Astra UI 遵循 iced 的状态所有权：业务状态与 `Message` 保留在应用中，组件接收当前值和消息。需要动画时，由应用持有 `MotionState`，通过订阅产生 tick，再将动画进度传给对应的 animated style。`Tabs` 通过 `TabItem` 组合标签与面板，使用 `.selected(...)` 和 `.on_selection_change(...)` 管理受控选中状态，支持 `TabsVariant::Primary/Secondary` 及水平、垂直布局。`TextArea` 使用 `text_editor::Content`，`ListBox` 通过回调将选择事件交还给应用。`InputOTP::new` 的回调接收 `InputOtpChange`，其中包含最新 `value`、编辑槽位、`Input`/`Backspace` 动作以及下一焦点槽位的 `focus_id`；应用更新值后可返回 `iced::widget::operation::focus(change.focus_id)`，实现连续输入和反向删除。`Drawer` 同样由应用控制是否渲染，支持四边停靠、遮罩变体、可滚动正文、Footer、关闭按钮、不可关闭遮罩和 `animation_progress` 过渡进度；`AlertDialog` 与 `global_modal_with_options_animated` 也支持同样的进度驱动过渡，`on_interact` 消息用于消费抽屉或弹窗内部空白区域的点击。
+
+浮层组件不会自行管理应用状态。Modal、Drawer、Toast、Dropdown 和 Context Menu 的可见性、内容及关闭事件均由调用方控制；`global_message_animated_with_placement` 和 `toast_animated_with_placement` 接收调用方维护的过渡进度、进入/退出阶段与 `ToastPlacement`。全局消息和 Toast 会使用同一套位置方向映射，自动选择水平或垂直滑动方向，并沿进入路径返回。多个浮层可通过 `GlobalLayer` 统一确定层级。
 
 ## 项目结构
 
 ```text
-astra-ui/
+iced-astraui/
 ├── assets/
-│   ├── fonts/          # HarmonyOS Sans 字体资源
-│   └── icon/           # 应用图标
+│   ├── fonts/              # HarmonyOS Sans 字体
+│   └── icon/               # 项目与 Showcase 图标
+├── examples/
+│   ├── showcase.rs         # Showcase 入口
+│   └── showcase/app.rs     # 示例状态、消息与页面
 ├── src/
-│   ├── app.rs          # Showcase 状态、消息与页面
-│   ├── fonts.rs        # 字体注册与字重映射
-│   ├── icons.rs        # Lucide 图标适配
-│   ├── main.rs         # Showcase 入口
-│   └── ui.rs           # 组件、样式、设计令牌与交互实现
-├── Cargo.toml
-└── README.md
+│   ├── components/         # 组件、样式和设计令牌
+│   ├── fonts.rs            # 字体常量与内嵌字体映射
+│   ├── icons.rs            # Lucide 图标辅助函数
+│   ├── lib.rs              # crate 根模块与公共导出
+│   └── ui.rs               # 兼容性公共导出层
+├── llms.md                 # 面向 AI 工具的完整项目上下文
+├── llms.txt                # 精简的 llms.txt 项目索引
+└── Cargo.toml
 ```
 
-## 开发
-
-提交代码前请运行：
+## 开发与验证
 
 ```bash
 cargo fmt --check
-cargo check
-cargo test
+cargo check --all-targets
+cargo test --all-targets
+cargo doc --no-deps
+cargo package
 ```
 
-新增组件时，请尽量保持以下原则：
-
-- 优先复用现有设计令牌与语义色，不在组件内随意增加孤立样式。
-- 同时处理默认、悬停、按下、聚焦和禁用状态。
-- API 与 iced 的消息驱动模型保持一致，并支持与原生 widget 组合。
-- 在 Showcase 中补充可交互示例，展示主要变体和边界状态。
+新增或修改组件时应复用现有令牌，覆盖默认、悬停、按下、聚焦、选中和禁用状态，并在 Showcase 中加入可交互示例。公共 API 变化还应同步更新 README、`llms.md`、`llms.txt` 与 `CHANGELOG.md`。
 
 ## 项目状态
 
-Astra UI 当前处于早期开发阶段，API 可能随组件完善而调整。`Cargo.toml` 暂时设置为 `publish = false`，建议在固定提交版本的前提下集成到应用中。
+Astra UI 当前处于早期开发阶段。`0.x` 期间公共 API 仍可能调整，请在升级时查阅 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 许可证
 
-本项目基于 [MIT License](LICENSE) 开源。第三方字体与图标资源遵循各自的许可证。
+项目基于 [MIT License](LICENSE) 开源。第三方字体和图标资源遵循各自许可证。

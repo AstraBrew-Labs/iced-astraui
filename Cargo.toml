@@ -1,14 +1,39 @@
 [package]
-name = "astra-ui"
-version = "0.1.0"
+name = "iced-astraui"
+version = "0.0.1"
 edition = "2024"
-description = "Iced UI library for AstraBrew-Labs"
+rust-version = "1.85"
+description = "A reusable desktop UI component library and design system for iced"
 license = "MIT"
-publish = false
+repository = "https://github.com/AstraBrew-Labs/iced-astraui"
+homepage = "https://github.com/AstraBrew-Labs/iced-astraui"
+documentation = "https://docs.rs/iced-astraui"
+readme = "README.md"
+keywords = ["iced", "gui", "widgets", "components", "design-system"]
+categories = ["gui"]
+include = [
+    "/src/**",
+    "/examples/**",
+    "/assets/fonts/**",
+    "/assets/icon/icon.png",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/README.md",
+]
+
+[lib]
+name = "astra_ui"
+path = "src/lib.rs"
 
 [dependencies]
-iced = { version = "0.14.0", features = ["advanced", "canvas", "image", "tokio"] }
+iced = { version = "0.14.0", features = ["advanced", "canvas", "image"] }
 lucide-icons = { version = "1.31.0", features = ["iced"] }
+
+[dev-dependencies]
+iced = { version = "0.14.0", features = ["tokio"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 [profile.release]
 lto = "thin"

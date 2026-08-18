@@ -158,14 +158,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "astra-ui"
-version = "0.1.0"
-dependencies = [
- "iced",
- "lucide-icons",
-]
-
-[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1417,6 +1409,15 @@ dependencies = [
  "iced_winit",
  "image",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "iced-astraui"
+version = "0.0.1"
+dependencies = [
+ "iced",
+ "image",
+ "lucide-icons",
 ]
 
 [[package]]

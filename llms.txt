@@ -1,0 +1,30 @@
+# Astra UI
+
+> A native Rust component library and design system for iced 0.14, inspired by HeroUI v3 and designed around iced's application-owned state and message-driven architecture.
+
+Astra UI uses the `iced-astraui` Cargo package name and the `astra_ui` Rust crate name. The current version is 0.0.1, uses Rust 2024, requires Rust 1.85+, and is licensed under MIT. It provides reusable components, semantic design tokens, HarmonyOS Sans fonts, Lucide icon helpers, lightweight motion, and a runnable Showcase. Version 0.0.1 is not currently listed on crates.io; use the Git repository or a local path. The project is in early development and its pre-1.0 API may change.
+
+## Documentation
+
+- [README](README.md): Installation, component overview, minimal application, project structure, and contribution checks.
+- [Detailed AI context](llms.md): Architecture, complete component inventory, design rules, state model, workflows, and known constraints.
+- [Changelog](CHANGELOG.md): Version history and public changes.
+- [Manifest](Cargo.toml): Authoritative package metadata, Rust version, features, and dependencies.
+
+## Source
+
+- [Crate root](src/lib.rs): Public modules, crate-root component exports, and prelude.
+- [Compatibility facade](src/ui.rs): Stable `astra_ui::ui::*` re-exports.
+- [Components](src/components/mod.rs): Component module assembly; implementations live beside this file.
+- [Keyboard shortcut component](src/components/kbd.rs): Mac/Win-aware Kbd key groups and key mappings.
+- [Overlay transitions](src/components/transition.rs): translated transition wrapper used by modal and drawer presentations.
+- [Design tokens](src/components/tokens.rs): Theme, colors, dimensions, variants, and `MotionState`.
+- [Fonts](src/fonts.rs): Embedded HarmonyOS Sans weights and font byte mappings.
+- [Icons](src/icons.rs): Lucide icon-to-Element helper.
+
+## Examples
+
+- [Showcase entry](examples/showcase.rs): Native application setup, fonts, icon, and window settings.
+- [Showcase application](examples/showcase/app.rs): Interactive components, tokens, patterns, application state, and tests.
+
+Run `cargo check --all-targets` for a fast validation, `cargo test --all-targets` for tests, and `cargo run --release --example showcase` to open the interactive demo in a graphical session.

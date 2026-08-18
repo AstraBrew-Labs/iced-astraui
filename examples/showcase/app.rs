@@ -1,13 +1,14 @@
+use iced::animation::{Animation, Easing};
 use iced::time::{self, Duration, Instant};
 use iced::widget::text::LineHeight;
 use iced::widget::{
-    button, checkbox, column, container, mouse_area, pick_list, row, rule, scrollable, space, text,
-    text_input,
+    button, checkbox, column, container, image, mouse_area, pick_list, row, rule, scrollable,
+    space, text, text_editor, text_input,
 };
 use iced::{Alignment, Element, Fill, Pixels, Point, Subscription, Task, Theme};
 use lucide_icons::Icon;
 
-use crate::{fonts, icons, ui};
+use astra_ui::{TabItem, Tabs, TabsVariant, fonts, icons, ui};
 
 const PAGINATION_DEMO_TOTAL_PAGES: usize = 20;
 
@@ -64,6 +65,8 @@ struct GlobalMessage {
     description: String,
     kind: ui::MessageKind,
     expires_at: Instant,
+    closing: bool,
+    animation: Animation<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +77,93 @@ struct ToastNotice {
     variant: ui::ToastVariant,
     action_label: Option<&'static str>,
     expires_at: Instant,
+    closing: bool,
+    animation: Animation<bool>,
+}
+
+fn overlay_animation(duration: Duration, now: Instant, animate: bool) -> Animation<bool> {
+    let mut animation = Animation::new(!animate)
+        .duration(duration)
+        .easing(Easing::EaseOutCubic);
+    if animate {
+        animation.go_mut(true, now);
+    }
+    animation
+}
+
+impl GlobalMessage {
+    fn new(
+        title: &'static str,
+        description: String,
+        kind: ui::MessageKind,
+        expires_at: Instant,
+        now: Instant,
+        animate: bool,
+    ) -> Self {
+        Self {
+            title,
+            description,
+            kind,
+            expires_at,
+            closing: false,
+            animation: overlay_animation(Duration::from_millis(180), now, animate),
+        }
+    }
+
+    fn close(&mut self, now: Instant) {
+        if !self.closing {
+            self.closing = true;
+            self.animation.go_mut(false, now);
+        }
+    }
+
+    fn progress(&self, now: Instant) -> f32 {
+        self.animation.interpolate(0.0, 1.0, now)
+    }
+
+    fn finished(&self, now: Instant) -> bool {
+        !self.animation.is_animating(now) && self.progress(now) <= 0.0
+    }
+}
+
+impl ToastNotice {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        id: u64,
+        title: &'static str,
+        description: &'static str,
+        variant: ui::ToastVariant,
+        action_label: Option<&'static str>,
+        expires_at: Instant,
+        now: Instant,
+        animate: bool,
+    ) -> Self {
+        Self {
+            id,
+            title,
+            description,
+            variant,
+            action_label,
+            expires_at,
+            closing: false,
+            animation: overlay_animation(Duration::from_millis(160), now, animate),
+        }
+    }
+
+    fn close(&mut self, now: Instant) {
+        if !self.closing {
+            self.closing = true;
+            self.animation.go_mut(false, now);
+        }
+    }
+
+    fn progress(&self, now: Instant) -> f32 {
+        self.animation.interpolate(0.0, 1.0, now)
+    }
+
+    fn finished(&self, now: Instant) -> bool {
+        self.closing && !self.animation.is_animating(now) && self.progress(now) <= 0.0
+    }
 }
 
 impl Channel {
@@ -108,6 +198,9 @@ pub(crate) enum Message {
     DismissMenus,
     DropdownSelected(DropdownAction),
     TabSelected(usize),
+    TextAreaAction(text_editor::Action),
+    OtpChanged(ui::InputOtpChange),
+    ListBoxSelected(usize),
     Action(&'static str),
     DismissGlobalNotice,
     ToastPlacementSelected(ui::ToastPlacement),
@@ -125,6 +218,8 @@ pub(crate) enum Message {
     CloseModal,
     ConfirmModal,
     ModalInputChanged(String),
+    OpenDrawer,
+    CloseDrawer,
     Noop,
     Tick(Instant),
 }
@@ -172,6 +267,10 @@ pub struct Launcher {
     toolbar_focus: usize,
     modal: Option<ModalKind>,
     modal_input: String,
+    drawer_open: bool,
+    notes: text_editor::Content,
+    otp_value: String,
+    list_choice: usize,
     motion: ui::MotionState,
 }
 
@@ -253,6 +352,12 @@ impl Launcher {
                 );
             }
             Message::InputChanged(value) => self.input = value,
+            Message::TextAreaAction(action) => self.notes.perform(action),
+            Message::OtpChanged(change) => {
+                self.otp_value = change.value;
+                return iced::widget::operation::focus(change.focus_id);
+            }
+            Message::ListBoxSelected(index) => self.list_choice = index,
             Message::ToggleChanged(value) => {
                 self.toggled = value;
                 self.motion.set_toggled(value, now);
@@ -315,13 +420,21 @@ impl Launcher {
                 self.motion.press(notice, now);
                 self.show_global_message("Action completed", notice, ui::MessageKind::Success, now);
             }
-            Message::DismissGlobalNotice => self.global_message = None,
+            Message::DismissGlobalNotice => {
+                if let Some(message) = self.global_message.as_mut() {
+                    message.close(now);
+                }
+            }
             Message::ToastPlacementSelected(placement) => self.toast_placement = placement,
             Message::ShowToast(demo) => self.show_toast(demo, now),
-            Message::DismissToast(id) => self.toasts.retain(|toast| toast.id != id),
+            Message::DismissToast(id) => {
+                if let Some(toast) = self.toasts.iter_mut().find(|toast| toast.id == id) {
+                    toast.close(now);
+                }
+            }
             Message::ToastAction(id) => {
                 self.toasts.retain(|toast| toast.id != id);
-                self.push_toast(
+                self.push_toast_immediate(
                     "Update scheduled",
                     "The app will restart when current work is complete.",
                     ui::ToastVariant::Success,
@@ -398,6 +511,7 @@ impl Launcher {
             }
             Message::OpenModal(kind) => {
                 self.modal = Some(kind);
+                self.motion.set_modal(true, now);
                 self.dropdown_open = false;
                 self.context_menu_position = None;
                 self.motion.press(
@@ -408,7 +522,7 @@ impl Launcher {
                     now,
                 );
             }
-            Message::CloseModal => self.modal = None,
+            Message::CloseModal => self.motion.set_modal(false, now),
             Message::ConfirmModal => match self.modal {
                 Some(ModalKind::Form) if self.modal_input.trim().is_empty() => {
                     self.show_global_message(
@@ -419,7 +533,7 @@ impl Launcher {
                     );
                 }
                 Some(ModalKind::Form) => {
-                    self.modal = None;
+                    self.motion.set_modal(false, now);
                     self.show_global_message(
                         "Form submitted",
                         "The workspace configuration was saved.",
@@ -428,7 +542,7 @@ impl Launcher {
                     );
                 }
                 Some(ModalKind::Confirmation) => {
-                    self.modal = None;
+                    self.motion.set_modal(false, now);
                     self.show_global_message(
                         "Action confirmed",
                         "The destructive operation was confirmed.",
@@ -439,9 +553,23 @@ impl Launcher {
                 None => {}
             },
             Message::ModalInputChanged(value) => self.modal_input = value,
+            Message::OpenDrawer => {
+                self.drawer_open = true;
+                self.motion.set_drawer(true, now);
+            }
+            Message::CloseDrawer => {
+                self.drawer_open = false;
+                self.motion.set_drawer(false, now);
+            }
             Message::Noop => {}
             Message::Tick(now) => {
                 self.motion.tick(now);
+                if self.modal.is_some()
+                    && !self.motion.modal_animating(now)
+                    && self.motion.modal_progress(now) <= 0.0
+                {
+                    self.modal = None;
+                }
                 if self.page == Page::Components {
                     let elapsed = self
                         .progress_last_tick
@@ -461,15 +589,30 @@ impl Launcher {
                     .as_ref()
                     .is_some_and(|message| now >= message.expires_at)
                 {
+                    if let Some(message) = self.global_message.as_mut() {
+                        message.close(now);
+                    }
+                }
+                for toast in &mut self.toasts {
+                    if now >= toast.expires_at {
+                        toast.close(now);
+                    }
+                }
+                self.toasts.retain(|toast| !toast.finished(now));
+                if self
+                    .global_message
+                    .as_ref()
+                    .is_some_and(|message| message.finished(now))
+                {
                     self.global_message = None;
                 }
-                self.toasts.retain(|toast| now < toast.expires_at);
             }
         }
         Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        let now = Instant::now();
         let base = row![self.sidebar(), self.content()]
             .width(Fill)
             .height(Fill);
@@ -482,7 +625,12 @@ impl Launcher {
         let mut has_global_layer = false;
 
         if let Some(kind) = self.modal {
-            global_stack = global_stack.push(self.modal_layer(kind));
+            global_stack =
+                global_stack.push(self.modal_layer(kind, self.motion.modal_progress(now)));
+            has_global_layer = true;
+        }
+        if self.drawer_open || self.motion.drawer_progress(now) > 0.0 {
+            global_stack = global_stack.push(self.drawer_layer(self.motion.drawer_progress(now)));
             has_global_layer = true;
         }
         if !self.toasts.is_empty() {
@@ -502,19 +650,24 @@ impl Launcher {
     }
 
     fn message_layer<'a>(&self, message: &'a GlobalMessage) -> Element<'a, Message> {
+        let placement = ui::ToastPlacement::TopEnd;
+        let (horizontal, vertical) = placement.alignment();
         container(
-            mouse_area(ui::global_message(
+            mouse_area(ui::global_message_animated_with_placement(
                 message.title,
                 &message.description,
                 message.kind,
                 Message::DismissGlobalNotice,
+                placement,
+                message.progress(Instant::now()),
+                message.closing,
             ))
             .on_press(Message::Noop),
         )
         .width(Fill)
         .height(Fill)
-        .align_x(Alignment::End)
-        .align_y(Alignment::Start)
+        .align_x(horizontal)
+        .align_y(vertical)
         .padding([24, 28])
         .into()
     }
@@ -524,7 +677,7 @@ impl Launcher {
             .toasts
             .iter()
             .fold(column![].spacing(10).width(420), |toasts, toast| {
-                toasts.push(ui::toast(
+                toasts.push(ui::toast_animated_with_placement(
                     toast.title,
                     toast.description,
                     toast.variant,
@@ -533,6 +686,9 @@ impl Launcher {
                         .map(|label| (label, Message::ToastAction(toast.id))),
                     Message::DismissToast(toast.id),
                     Message::Noop,
+                    self.toast_placement,
+                    toast.progress(Instant::now()),
+                    toast.closing,
                 ))
             });
 
@@ -548,12 +704,15 @@ impl Launcher {
     ) {
         self.dropdown_open = false;
         self.context_menu_position = None;
-        self.global_message = Some(GlobalMessage {
+        let animate = self.global_message.is_none();
+        self.global_message = Some(GlobalMessage::new(
             title,
-            description: description.into(),
+            description.into(),
             kind,
-            expires_at: now + Duration::from_millis(3_200),
-        });
+            now + Duration::from_millis(3_200),
+            now,
+            animate,
+        ));
     }
 
     fn show_toast(&mut self, demo: ToastDemo, now: Instant) {
@@ -603,17 +762,45 @@ impl Launcher {
         action_label: Option<&'static str>,
         now: Instant,
     ) {
+        self.push_toast_with_animation(title, description, variant, action_label, now, None);
+    }
+
+    fn push_toast_immediate(
+        &mut self,
+        title: &'static str,
+        description: &'static str,
+        variant: ui::ToastVariant,
+        action_label: Option<&'static str>,
+        now: Instant,
+    ) {
+        self.push_toast_with_animation(title, description, variant, action_label, now, Some(false));
+    }
+
+    fn push_toast_with_animation(
+        &mut self,
+        title: &'static str,
+        description: &'static str,
+        variant: ui::ToastVariant,
+        action_label: Option<&'static str>,
+        now: Instant,
+        animate_override: Option<bool>,
+    ) {
         self.next_toast_id = self.next_toast_id.wrapping_add(1);
-        self.toasts.push(ToastNotice {
-            id: self.next_toast_id,
+        let animate = animate_override.unwrap_or(!self.toasts.iter().any(|toast| toast.closing));
+        self.toasts.push(ToastNotice::new(
+            self.next_toast_id,
             title,
             description,
             variant,
             action_label,
-            expires_at: now + Duration::from_secs(4),
-        });
-        if self.toasts.len() > 3 {
-            self.toasts.remove(0);
+            now + Duration::from_secs(4),
+            now,
+            animate,
+        ));
+        if self.toasts.iter().filter(|toast| !toast.closing).count() > 3 {
+            if let Some(toast) = self.toasts.iter_mut().find(|toast| !toast.closing) {
+                toast.close(now);
+            }
         }
     }
 
@@ -631,19 +818,10 @@ impl Launcher {
 
     fn sidebar(&self) -> Element<'_, Message> {
         let brand = row![
-            container(icons::icon(Icon::Component, 20, ui::WHITE))
+            image("assets/icon/icon.png")
                 .width(36)
                 .height(36)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .style(|_| container::Style {
-                    background: Some(iced::Background::Color(ui::BLUE_600)),
-                    border: iced::Border {
-                        radius: 12.0.into(),
-                        ..iced::Border::default()
-                    },
-                    ..container::Style::default()
-                }),
+                .border_radius(8),
             column![
                 text("ASTRA UI").size(16).font(fonts::BLACK),
                 text("LOCAL ICED KIT")
@@ -764,9 +942,9 @@ impl Launcher {
             .into()
     }
 
-    fn modal_layer(&self, kind: ModalKind) -> Element<'_, Message> {
+    fn modal_layer(&self, kind: ModalKind, animation_progress: f32) -> Element<'_, Message> {
         match kind {
-            ModalKind::Form => ui::global_modal(
+            ModalKind::Form => ui::global_modal_animated(
                 "Create workspace",
                 "Configure a reusable local workspace.",
                 column![
@@ -795,6 +973,7 @@ impl Launcher {
                 Message::CloseModal,
                 Message::ConfirmModal,
                 Message::Noop,
+                animation_progress,
             ),
             ModalKind::Confirmation => ui::AlertDialog::new(
                 "Delete local preset?",
@@ -807,8 +986,56 @@ impl Launcher {
             .cancel_label("Cancel")
             .confirm_label("Delete")
             .destructive(true)
+            .animation_progress(animation_progress)
             .into(),
         }
+    }
+
+    fn drawer_layer(&self, animation_progress: f32) -> Element<'_, Message> {
+        ui::Drawer::new(
+            "Workspace details",
+            column![
+                text("Supplementary actions can live here without interrupting the current page.")
+                    .size(13)
+                    .color(ui::INK_MUTED),
+                ui::Surface::new(
+                    column![
+                        text("Current workspace")
+                            .size(11)
+                            .font(fonts::MEDIUM)
+                            .color(ui::INK_MUTED),
+                        text("Astra UI local kit").size(15).font(fonts::MEDIUM),
+                        text("Synced just now").size(12).color(ui::SUCCESS),
+                    ]
+                    .spacing(6),
+                )
+                .variant(ui::SurfaceVariant::Secondary)
+                .width(Fill),
+            ]
+            .spacing(16),
+            Message::CloseDrawer,
+            Message::Noop,
+        )
+        .description("Review status and quick workspace actions.")
+        .placement(ui::DrawerPlacement::Right)
+        .animation_progress(animation_progress)
+        .footer(
+            row![
+                button(button_text("Cancel", 13.0))
+                    .on_press(Message::CloseDrawer)
+                    .height(ui::CONTROL_HEIGHT_MD)
+                    .padding([8, 16])
+                    .style(ui::button_style(ui::ButtonVariant::Secondary)),
+                button(button_text("Done", 13.0))
+                    .on_press(Message::CloseDrawer)
+                    .height(ui::CONTROL_HEIGHT_MD)
+                    .padding([8, 16])
+                    .style(ui::button_style(ui::ButtonVariant::Primary)),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        )
+        .into()
     }
 
     fn components_page(&self) -> Element<'_, Message> {
@@ -1051,6 +1278,69 @@ impl Launcher {
             .spacing(16),
         );
 
+        let form_composition = self.component_card(
+            "Surface, labels & collection controls",
+            "The new form and collection primitives keep state in the application while sharing the same semantic surfaces.",
+            row![
+                ui::Surface::new(
+                    column![
+                        ui::Label::new("Project notes").required(true),
+                        ui::TextArea::new(&self.notes)
+                            .placeholder("Share a short project update...")
+                            .rows(4)
+                            .on_action(Message::TextAreaAction),
+                        ui::Label::new("Verification code"),
+                        ui::InputOTP::new(&self.otp_value, 6, Message::OtpChanged)
+                            .id_prefix("verification-otp")
+                            .separator_after(2),
+                    ]
+                    .spacing(10)
+                    .width(Fill),
+                )
+                .variant(ui::SurfaceVariant::Secondary)
+                .padding(16)
+                .width(Fill),
+                ui::ListBox::new(vec![
+                    ui::ListBoxItem::new(
+                        "stable",
+                        text("Stable release").size(14).font(fonts::MEDIUM),
+                    )
+                    .description(
+                        text("Recommended for production")
+                            .size(12)
+                            .line_height(LineHeight::Absolute(Pixels(18.0)))
+                            .color(ui::INK_MUTED),
+                    ),
+                    ui::ListBoxItem::new(
+                        "preview",
+                        text("Preview channel").size(14).font(fonts::MEDIUM),
+                    )
+                    .description(
+                        text("Try upcoming component changes")
+                            .size(12)
+                            .line_height(LineHeight::Absolute(Pixels(18.0)))
+                            .color(ui::INK_MUTED),
+                    ),
+                    ui::ListBoxItem::new(
+                        "nightly",
+                        text("Nightly build").size(14).font(fonts::MEDIUM),
+                    )
+                    .description(
+                        text("Latest changes, may be unstable")
+                            .size(12)
+                            .line_height(LineHeight::Absolute(Pixels(18.0)))
+                            .color(ui::DANGER),
+                    )
+                        .variant(ui::ListBoxItemVariant::Danger),
+                ])
+                .selected(self.list_choice)
+                .on_selection_change(Message::ListBoxSelected)
+                .width(Fill),
+            ]
+            .spacing(16)
+            .align_y(Alignment::Start),
+        );
+
         let data_display = self.component_card(
             "Chip, disclosure & dropdown",
             "Compact metadata, collapsible details, and contextual actions share one visual language.",
@@ -1082,6 +1372,48 @@ impl Launcher {
                     ]
                     .spacing(8)
                     .wrap(),
+                ]
+                .spacing(8),
+                column![
+                    text("Kbd")
+                        .size(11)
+                        .font(fonts::MEDIUM)
+                        .color(ui::INK_MUTED),
+                    row![
+                        column![
+                            text("Mac")
+                                .size(10)
+                                .font(fonts::MEDIUM)
+                                .color(ui::INK_MUTED),
+                            row![
+                                ui::Kbd::mac([
+                                    ui::KbdKey::Command,
+                                    ui::KbdKey::character("K"),
+                                ]),
+                                ui::Kbd::mac([
+                                    ui::KbdKey::Command,
+                                    ui::KbdKey::Shift,
+                                    ui::KbdKey::character("P"),
+                                ])
+                                .variant(ui::KbdVariant::Light),
+                            ]
+                            .spacing(8),
+                        ]
+                        .spacing(5),
+                        column![
+                            text("Win")
+                                .size(10)
+                                .font(fonts::MEDIUM)
+                                .color(ui::INK_MUTED),
+                            ui::Kbd::win([
+                                ui::KbdKey::Command,
+                                ui::KbdKey::character("K"),
+                            ]),
+                        ]
+                        .spacing(5),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
                 ]
                 .spacing(8),
                 ui::disclosure(
@@ -1242,32 +1574,6 @@ impl Launcher {
                 .spacing(8)
                 .wrap(),
                 row![
-                    container(
-                        row![
-                            icons::icon(Icon::Info, 16, ui::BLUE_600),
-                            text("Info: styles are local and themeable.").size(11)
-                        ]
-                        .spacing(9)
-                        .align_y(Alignment::Center)
-                    )
-                    .height(64)
-                    .padding([0, 16])
-                    .width(Fill)
-                    .style(ui::alert(ui::AlertKind::Info)),
-                    container(
-                        row![
-                            icons::icon(Icon::CircleCheck, 16, ui::SUCCESS),
-                            text("Saved").size(11)
-                        ]
-                        .spacing(9)
-                        .align_y(Alignment::Center)
-                    )
-                    .height(64)
-                    .padding([0, 16])
-                    .style(ui::alert(ui::AlertKind::Success)),
-                ]
-                .spacing(10),
-                row![
                     button(button_text("Open form", 13.0))
                         .on_press(Message::OpenModal(ModalKind::Form))
                         .height(ui::CONTROL_HEIGHT_MD)
@@ -1284,6 +1590,11 @@ impl Launcher {
                             ui::ButtonVariant::Outline,
                             press("open-confirmation-modal"),
                         )),
+                    button(button_text("Open drawer", 13.0))
+                        .on_press(Message::OpenDrawer)
+                        .height(ui::CONTROL_HEIGHT_MD)
+                        .padding([8, 16])
+                        .style(ui::button_style(ui::ButtonVariant::Secondary)),
                 ]
                 .spacing(8),
             ]
@@ -1306,6 +1617,7 @@ impl Launcher {
             header,
             buttons,
             fields,
+            form_composition,
             avatar_showcase,
             alert_showcase,
             accordion_showcase,
@@ -2525,43 +2837,66 @@ impl Launcher {
     }
 
     fn patterns_page(&self) -> Element<'_, Message> {
-        let now = Instant::now();
-        let press = |id| self.motion.press_progress(id, now);
-        let labels = ["Overview", "Usage", "Accessibility"];
-        let tabs =
-            labels
-                .into_iter()
-                .enumerate()
-                .fold(row![].spacing(3), |tabs, (index, label)| {
-                    tabs.push(
-                        button(button_text(label, 12.0))
-                            .on_press(Message::TabSelected(index))
-                            .height(32)
-                            .padding([6, 12])
-                            .style(ui::tab_animated(
-                                self.active_tab == index,
-                                press(if index == 0 {
-                                    "tab-0"
-                                } else if index == 1 {
-                                    "tab-1"
-                                } else {
-                                    "tab-2"
-                                }),
-                            )),
+        let tabs = Tabs::new(vec![
+            TabItem::new(
+                button_text("Overview", 12.0),
+                column![
+                    text("Composable patterns").size(18).font(fonts::BOLD),
+                    text("Cards, toolbars, and settings rows are assembled from the same primitives shown on the Components page.")
+                        .size(12)
+                        .color(ui::INK_MUTED),
+                    row![
+                        self.pattern_tile(Icon::Command, "Command bar", "Search, actions, and keyboard hints"),
+                        self.pattern_tile(Icon::PanelTop, "Settings row", "Label, description, and trailing control")
+                    ]
+                    .spacing(14)
+                ]
+                .spacing(14),
+            )
+            .id("overview"),
+            TabItem::new(
+                button_text("Usage", 12.0),
+                column![
+                    text("Usage recipe").size(18).font(fonts::BOLD),
+                    container(
+                        text("button(text(\"Save\")).style(ui::button_style(ui::ButtonVariant::Primary))")
+                            .size(12)
+                            .font(fonts::MEDIUM)
+                            .color(ui::CYAN_300),
                     )
-                });
-        let content = match self.active_tab {
-            0 => column![text("Composable patterns").size(18).font(fonts::BOLD), text("Cards, toolbars, and settings rows are assembled from the same primitives shown on the Components page.").size(12).color(ui::INK_MUTED), row![self.pattern_tile(Icon::Command, "Command bar", "Search, actions, and keyboard hints"), self.pattern_tile(Icon::PanelTop, "Settings row", "Label, description, and trailing control")].spacing(14)].spacing(14),
-            1 => column![text("Usage recipe").size(18).font(fonts::BOLD), container(text("button(text(\"Save\")).style(ui::button_style(ui::ButtonVariant::Primary))").size(12).font(fonts::MEDIUM).color(ui::CYAN_300)).padding(16).width(Fill).style(ui::code_block), text("Import the module once, then use semantic variants in each screen.").size(12).color(ui::INK_MUTED)].spacing(14),
-            _ => column![text("Accessibility defaults").size(18).font(fonts::BOLD), text("Focus borders, disabled colors, readable contrast, and explicit labels are part of the local styles. Keep labels attached to controls and use icons with tooltips in product screens.").size(12).color(ui::INK_MUTED)].spacing(14),
-        };
+                    .padding(16)
+                    .width(Fill)
+                    .style(ui::code_block),
+                    text("Import the module once, then use semantic variants in each screen.")
+                        .size(12)
+                        .color(ui::INK_MUTED)
+                ]
+                .spacing(14),
+            )
+            .id("usage")
+            .separator(true),
+            TabItem::new(
+                button_text("Accessibility", 12.0),
+                column![
+                    text("Accessibility defaults").size(18).font(fonts::BOLD),
+                    text("Focus borders, disabled colors, readable contrast, and explicit labels are part of the local styles. Keep labels attached to controls and use icons with tooltips in product screens.")
+                        .size(12)
+                        .color(ui::INK_MUTED)
+                ]
+                .spacing(14),
+            )
+            .id("accessibility")
+            .separator(true),
+        ])
+        .selected(self.active_tab)
+        .variant(TabsVariant::Primary)
+        .on_selection_change(Message::TabSelected);
         column![
             text("Patterns").size(32).font(fonts::BLACK),
             text("Small compositions that make product screens feel coherent.")
                 .size(14)
                 .color(ui::INK_MUTED),
-            container(tabs).padding(4).style(ui::flat_card),
-            container(content).padding(20).width(Fill).style(ui::card)
+            container(tabs).padding(20).width(Fill)
         ]
         .spacing(22)
         .padding([34, 42])
@@ -2602,7 +2937,7 @@ mod tests {
         DropdownAction, KeyboardScope, Launcher, Message, ModalKind, PAGINATION_DEMO_TOTAL_PAGES,
         Page, ToastDemo,
     };
-    use crate::ui;
+    use astra_ui::ui;
     use iced::{Point, time::Duration, time::Instant};
 
     #[test]
@@ -2673,6 +3008,8 @@ mod tests {
         let _ = launcher.update(Message::OpenModal(ModalKind::Confirmation));
         assert_eq!(launcher.modal, Some(ModalKind::Confirmation));
         let _ = launcher.update(Message::ConfirmModal);
+        assert!(launcher.modal.is_some());
+        let _ = launcher.update(Message::Tick(Instant::now() + Duration::from_millis(300)));
         assert!(launcher.modal.is_none());
         assert_eq!(
             launcher.global_message.as_ref().map(|message| message.kind),
@@ -2694,6 +3031,17 @@ mod tests {
         assert!(!launcher.dropdown_open);
         assert!(launcher.context_menu_position.is_none());
         assert!(launcher.global_message.is_some());
+    }
+
+    #[test]
+    fn drawer_state_is_controlled_by_open_and_close_messages() {
+        let (mut launcher, _) = Launcher::new();
+
+        assert!(!launcher.drawer_open);
+        let _ = launcher.update(Message::OpenDrawer);
+        assert!(launcher.drawer_open);
+        let _ = launcher.update(Message::CloseDrawer);
+        assert!(!launcher.drawer_open);
     }
 
     #[test]
@@ -2757,12 +3105,22 @@ mod tests {
         let (mut launcher, _) = Launcher::new();
 
         let _ = launcher.update(Message::Action("Saved"));
+        let _ = launcher.update(Message::Action("Saved again"));
+        assert!(
+            launcher
+                .global_message
+                .as_ref()
+                .is_some_and(|message| !message.animation.is_animating(Instant::now()))
+        );
+
         let expires_at = launcher.global_message.as_ref().unwrap().expires_at;
         let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(1)));
+        let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(300)));
         assert!(launcher.global_message.is_none());
 
-        let _ = launcher.update(Message::Action("Saved again"));
+        let _ = launcher.update(Message::Action("Saved once more"));
         let _ = launcher.update(Message::DismissGlobalNotice);
+        let _ = launcher.update(Message::Tick(Instant::now() + Duration::from_millis(300)));
         assert!(launcher.global_message.is_none());
     }
 
@@ -2777,14 +3135,42 @@ mod tests {
         let _ = launcher.update(Message::ShowToast(ToastDemo::Success));
         let _ = launcher.update(Message::ShowToast(ToastDemo::Warning));
         let _ = launcher.update(Message::ShowToast(ToastDemo::Interactive));
-        assert_eq!(launcher.toasts.len(), 3);
+        assert_eq!(
+            launcher
+                .toasts
+                .iter()
+                .filter(|toast| !toast.closing)
+                .count(),
+            3
+        );
 
         let interactive_id = launcher.toasts.last().unwrap().id;
         let _ = launcher.update(Message::ToastAction(interactive_id));
-        assert_eq!(launcher.toasts.len(), 3);
+        assert_eq!(
+            launcher
+                .toasts
+                .iter()
+                .filter(|toast| !toast.closing)
+                .count(),
+            3
+        );
+        assert!(
+            !launcher
+                .toasts
+                .iter()
+                .any(|toast| toast.id == interactive_id)
+        );
         assert_eq!(
             launcher.toasts.last().map(|toast| toast.variant),
             Some(ui::ToastVariant::Success)
+        );
+        assert!(
+            !launcher
+                .toasts
+                .last()
+                .unwrap()
+                .animation
+                .is_animating(Instant::now())
         );
 
         let expires_at = launcher
@@ -2794,6 +3180,7 @@ mod tests {
             .max()
             .unwrap();
         let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(1)));
+        let _ = launcher.update(Message::Tick(expires_at + Duration::from_millis(300)));
         assert!(launcher.toasts.is_empty());
     }
 
@@ -2854,6 +3241,8 @@ mod tests {
 
         let _ = launcher.update(Message::ModalInputChanged("Launcher".to_owned()));
         let _ = launcher.update(Message::ConfirmModal);
+        assert!(launcher.modal.is_some());
+        let _ = launcher.update(Message::Tick(Instant::now() + Duration::from_millis(300)));
         assert!(launcher.modal.is_none());
         assert_eq!(
             launcher.global_message.as_ref().map(|message| message.kind),
