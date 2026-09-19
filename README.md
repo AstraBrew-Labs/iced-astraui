@@ -27,6 +27,16 @@ Astra UI 使用 Rust 原生实现，不依赖 WebView。它借鉴 HeroUI v3 清�
 - 内置 HarmonyOS Sans 六种字重与 Lucide 图标适配。
 - 可运行的 Showcase，覆盖组件、设计令牌和常见组合模式。
 
+## 效果截图
+
+<img src=".docs/assets/images/Win.png" alt="Astra UI Win" width="100%" height="100%">
+
+> Windows 平台
+
+<img src=".docs/assets/images/Mac.png" alt="Astra UI Mac" width="100%" height="100%">
+
+> MacOS 平台
+
 ## 组件
 
 | 分类 | API |
@@ -46,7 +56,7 @@ Astra UI 使用 Rust 原生实现，不依赖 WebView。它借鉴 HeroUI v3 清�
 
 - Rust 1.85 或更高版本
 - Cargo
-- iced 支持的桌面平台；当前主要在 macOS 上开发和验证
+- 支持的桌面平台：Windows 与 macOS 均已验证；Linux 依赖 iced 原生支持，但尚未完整验证
 
 ### 运行 Showcase
 
@@ -65,7 +75,7 @@ Cargo 包名是 `iced-astraui`，Rust 代码中的 crate 名是 `astra_ui`。已
 ```toml
 [dependencies]
 iced = "0.14"
-iced-astraui = "0.0.1"
+iced-astraui = "0.0.2"
 lucide-icons = { version = "1.31", features = ["iced"] }
 ```
 
@@ -179,13 +189,39 @@ iced-astraui/
 
 ## 开发与验证
 
+### 获取源码
+
+```bash
+git clone https://github.com/AstraBrew-Labs/iced-astraui.git
+cd iced-astraui
+```
+
+### 运行 Showcase
+
+```bash
+cargo run --release --example showcase
+```
+
+Showcase 包含三个页面：`Components` 展示交互组件、`Tokens` 展示颜色与排版令牌、`Patterns` 展示组合模式，开发时可借此即时预览组件效果。
+
+### 提交前检查
+
+提交改动前请依次执行以下命令，确保格式、编译、静态检查、测试与文档全部通过，且无警告无错误：
+
 ```bash
 cargo fmt --check
 cargo check --all-targets
+cargo clippy --all-targets
 cargo test --all-targets
 cargo doc --no-deps
 cargo package
 ```
+
+### 平台说明
+
+Astra UI 已在 Windows 与 macOS 两个平台完成验证，可正常构建、运行 Showcase 并通过全部检查：Windows 使用 wgpu 后端，macOS 使用 Metal 后端。无独立 GPU 的环境（如云电脑、远程桌面）会回退到软件渲染，界面功能一致，仅动画性能略低。Linux 依赖 iced 的原生支持，目前尚未完整验证。
+
+### 贡献组件
 
 新增或修改组件时应复用现有令牌，覆盖默认、悬停、按下、聚焦、选中和禁用状态，并在 Showcase 中加入可交互示例。公共 API 变化还应同步更新 README、`llms.md`、`llms.txt` 与 `CHANGELOG.md`。
 

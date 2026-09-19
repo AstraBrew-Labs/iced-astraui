@@ -2,7 +2,7 @@
 
 > A native Rust component library and design system for iced 0.14, inspired by HeroUI v3 and designed around iced's application-owned state and message-driven architecture.
 
-Astra UI uses the `iced-astraui` Cargo package name and the `astra_ui` Rust crate name. The current version is 0.0.1, uses Rust 2024, requires Rust 1.85+, and is licensed under MIT. It provides reusable components, semantic design tokens, HarmonyOS Sans fonts, Lucide icon helpers, lightweight motion, and a runnable Showcase. Version 0.0.1 is not currently listed on crates.io; use the Git repository or a local path. The project is in early development and its pre-1.0 API may change.
+Astra UI uses the `iced-astraui` Cargo package name and the `astra_ui` Rust crate name. The current version is 0.0.2, uses Rust 2024, requires Rust 1.85+, and is licensed under MIT. It provides reusable components, semantic design tokens, HarmonyOS Sans fonts, Lucide icon helpers, lightweight motion, and a runnable Showcase. It is verified on both Windows (wgpu) and macOS (Metal); Linux is not yet fully verified. The project is in early development and its pre-1.0 API may change.
 
 ## Documentation
 
@@ -27,4 +27,4 @@ Astra UI uses the `iced-astraui` Cargo package name and the `astra_ui` Rust crat
 - [Showcase entry](examples/showcase.rs): Native application setup, fonts, icon, and window settings.
 - [Showcase application](examples/showcase/app.rs): Interactive components, tokens, patterns, application state, and tests.
 
-Run `cargo check --all-targets` for a fast validation, `cargo test --all-targets` for tests, and `cargo run --release --example showcase` to open the interactive demo in a graphical session.
+Run `cargo check --all-targets` for a fast validation, `cargo clippy --all-targets` for linting, `cargo test --all-targets` for tests, and `cargo run --release --example showcase` to open the interactive demo in a graphical session. See the README for the full pre-commit checklist (`fmt --check` / `check` / `clippy` / `test` / `doc` / `package`).

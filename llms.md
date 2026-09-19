@@ -7,7 +7,7 @@ This file is the detailed, repository-local context for coding assistants workin
 - Project: Astra UI
 - Cargo package: `iced-astraui`
 - Rust crate: `astra_ui`
-- Version: `0.0.1`
+- Version: `0.0.2`
 - Language and edition: Rust 2024
 - Minimum Rust version: 1.85
 - UI framework: iced 0.14
@@ -171,9 +171,9 @@ Do not treat the Showcase launch as a replacement for compile checks or tests. R
 
 ## Known constraints
 
-- macOS is the primary development and verification platform at present; avoid claiming complete cross-platform validation without testing it.
+- Windows and macOS are both verified build/run targets (wgpu on Windows, Metal on macOS); Linux is supported by iced but not yet fully verified here. GPU-less environments fall back to software rendering.
 - The API is pre-1.0 and may change.
-- Version 0.0.1 is not currently listed on crates.io; user installation examples should use the Git repository or a local path until it is published.
+- The crate is published on crates.io; user installation examples should reference the version pinned in `Cargo.toml`.
 - The project currently uses one shared components module assembled with `include!`; preserve this structure unless a deliberate public API migration is requested.
 - The deprecation warning for a user-level `~/.cargo/config` and future-incompatibility notices from transitive dependencies are environment/upstream issues, not warnings emitted by Astra UI source.
 

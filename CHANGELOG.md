@@ -5,6 +5,13 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 
 ---
+
+## [0.0.2] - 2026-09-20
+
+### 修复
+
+- 修复 `ProgressCircle` 在无 GPU 环境（Windows 云电脑 / 远程会话，iced 回退到 tiny-skia 软件渲染后端）下的渲染错位：Canvas 几何的裁剪矩形被二次平移，导致圆环位置偏移、滚动时残留「拖影」。改为将绘制 Frame 的裁剪边界设为无穷大以中和该后端 bug，对 wgpu 后端无副作用。
+
 ## [0.0.1] - 2026-08-18
 
 - 初始版本

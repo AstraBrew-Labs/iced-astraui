@@ -88,11 +88,19 @@ impl<Message> iced_canvas::Program<Message> for ProgressCircleCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<iced_canvas::Geometry> {
-        let mut frame = iced_canvas::Frame::new(renderer, bounds.size());
+        // `iced_tiny_skia`（无 GPU 时的软件渲染后端，常见于云电脑/远程会话）在
+        // 0.14.0 中会把 Canvas 几何的裁剪矩形错误地二次应用变换
+        // （clip_bounds 已含 transformation，渲染时又乘了一次），
+        // 导致 Canvas 在 Scrollable 中滚动后错位并留下残影。
+        // 这里将 Frame 的裁剪边界设为无穷大，使二次变换后仍是全屏范围，
+        // 裁剪回退到图层（视口）边界，从而在该后端下保持几何位置正确；
+        // wgpu 后端（macOS/本地 GPU）本身不受影响，此改动对其无副作用。
+        let mut frame = iced_canvas::Frame::with_bounds(renderer, Rectangle::INFINITE);
         let diameter = bounds.width.min(bounds.height);
         let stroke_width = diameter * (4.0 / 36.0);
         let radius = diameter * (16.0 / 36.0);
-        let center = frame.center();
+        // 注意：不能再用 `frame.center()`，无穷大 Frame 的中心是 NaN。
+        let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
         let track = iced_canvas::Path::circle(center, radius);
         frame.stroke(
             &track,
